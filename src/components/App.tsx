@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { checkNotifications, notificationsEnabled, registerPeriodic } from "@/lib/notify";
 import { refreshStale } from "@/lib/refresh";
-import { getSnapshot, initStore, useStore } from "@/lib/store";
+import { discardPreview, getSnapshot, initStore, useStore } from "@/lib/store";
 import { startAutoSync } from "@/lib/sync";
 import { dismissToast, useToast } from "@/lib/toast";
+import type { Item } from "@/lib/types";
 import Detail from "./Detail";
 import History from "./History";
 import Library from "./Library";
@@ -57,6 +58,7 @@ export default function App() {
   const { items, eps, ready } = useStore();
   const [tab, setTab] = useState<Tab>("library");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<Item | null>(null);
   const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
 
   // ---- boot: local DB -> sync -> background refresh -> notifications
@@ -90,21 +92,30 @@ export default function App() {
   }, []);
 
   // ---- detail view lives on the history stack so system back / edge swipe closes it
-  const open = useCallback((id: string) => {
-    window.history.pushState({ detail: id }, "");
+  const open = useCallback((id: string, preview?: Item) => {
+    window.history.pushState({ detail: id, preview }, "");
     setDetailId(id);
+    setPreviewItem(preview ?? null);
   }, []);
   const close = useCallback(() => {
+    if (detailId) discardPreview(detailId);
     if (window.history.state?.detail) window.history.back();
-    else setDetailId(null);
-  }, []);
+    else {
+      setDetailId(null);
+      setPreviewItem(null);
+    }
+  }, [detailId]);
   useEffect(() => {
-    const onPop = () => setDetailId(window.history.state?.detail ?? null);
+    const onPop = () => {
+      const state = window.history.state as { detail?: string; preview?: Item } | null;
+      setDetailId(state?.detail ?? null);
+      setPreviewItem(state?.preview ?? null);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const detail = detailId ? items.find((i) => i.id === detailId) : undefined;
+  const detail = detailId ? items.find((i) => i.id === detailId) ?? (previewItem?.id === detailId ? previewItem : undefined) : undefined;
   useEffect(() => {
     if (detailId && ready && !detail) close();
   }, [detailId, detail, ready, close]);
