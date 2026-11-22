@@ -17,7 +17,7 @@ const changeListeners = new Set<() => void>();
 let initP: Promise<void> | null = null;
 
 function emit() {
-  snap = { items: [...items.values()].filter((i) => !i.deleted), eps: epsObj, ready: snap.ready };
+  snap = { items: [...items.values()].filter((i) => !i.deleted && !i.preview), eps: epsObj, ready: snap.ready };
   listeners.forEach((l) => l());
 }
 
@@ -64,10 +64,20 @@ export function initStore(): Promise<void> {
 
 function commit(item: Item, touch = true) {
   const next = touch ? { ...item, updatedAt: Date.now() } : item;
+  if (next.preview && touch) {
+    // First real change promotes a preview into a persisted library item.
+    const permanent = { ...next };
+    delete permanent.preview;
+    items.set(permanent.id, permanent);
+    idbPut("items", permanent).catch(() => {});
+    emit();
+    changeListeners.forEach((l) => l());
+    return;
+  }
   items.set(next.id, next);
-  idbPut("items", next).catch(() => {});
+  if (!next.preview) idbPut("items", next).catch(() => {});
   emit();
-  if (touch) changeListeners.forEach((l) => l());
+  if (touch && !next.preview) changeListeners.forEach((l) => l());
 }
 
 export function getItem(id: string) {
@@ -92,7 +102,36 @@ export function applyRemote(remote: Item[]): boolean {
 }
 
 export function allItemsRaw(): Item[] {
-  return [...items.values()];
+  return [...items.values()].filter((i) => !i.preview);
+}
+
+/** Open a search result in the detail view without adding it to the library. */
+export function createPreview(r: SearchResult): Item {
+  const id = `${r.type}-${r.tmdbId}`;
+  const existing = items.get(id);
+  if (existing) return existing;
+  const now = Date.now();
+  const item: Item = {
+    id,
+    tmdbId: r.tmdbId,
+    type: r.type,
+    title: r.title,
+    poster: r.poster,
+    anime: r.anime,
+    status: "planned",
+    watched: {},
+    addedAt: now,
+    updatedAt: now,
+    preview: true,
+  };
+  items.set(id, item);
+  return item;
+}
+
+/** Forget an unmodified preview when its detail view closes. */
+export function discardPreview(id: string) {
+  const item = items.get(id);
+  if (item?.preview) items.delete(id);
 }
 
 export function saveTitle(id: string, p: TitlePayload) {
@@ -152,6 +191,11 @@ export function addItem(r: SearchResult, status: Status): Item {
 export function removeItem(id: string) {
   const item = items.get(id);
   if (!item) return;
+  if (item.preview) {
+    items.delete(id);
+    emit();
+    return;
+  }
   commit({ ...item, deleted: true, watched: {} });
 }
 

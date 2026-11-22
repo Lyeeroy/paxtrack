@@ -17,6 +17,8 @@ export interface Item {
   updatedAt: number;
   refreshedAt?: number;
   deleted?: boolean;
+  /** Opened from search only; not persisted until the user makes a real change. */
+  preview?: boolean;
 }
 
 export interface EpData {
