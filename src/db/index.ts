@@ -1,24 +1,32 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required");
-}
-
 const globalForDb = globalThis as typeof globalThis & {
   __arenaNextJsPostgresqlPool?: Pool;
 };
 
-export const pool =
-  globalForDb.__arenaNextJsPostgresqlPool ??
-  new Pool({
-    connectionString: databaseUrl,
-  });
+type Database = ReturnType<typeof drizzle>;
 
-if (process.env.NODE_ENV !== "production") {
+let dbInstance: Database | undefined;
+
+function getPool(): Pool {
+  const existing = globalForDb.__arenaNextJsPostgresqlPool;
+  if (existing) return existing;
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is required");
+  }
+
+  const pool = new Pool({ connectionString });
   globalForDb.__arenaNextJsPostgresqlPool = pool;
+  return pool;
 }
 
-export const db = drizzle(pool);
+/** Create the client on first use so builds don't need DATABASE_URL. */
+export function getDb(): Database {
+  if (!dbInstance) {
+    dbInstance = drizzle(getPool());
+  }
+  return dbInstance;
+}

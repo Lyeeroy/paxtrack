@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { syncItems } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +24,7 @@ export async function POST(req: Request) {
   const now = Date.now();
 
   try {
+    const db = getDb();
     for (const it of incoming) {
       if (!it || typeof it.id !== "string" || typeof it.updatedAt !== "number") continue;
       await db
