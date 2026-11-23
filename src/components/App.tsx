@@ -61,6 +61,10 @@ export default function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [infoClosing, setInfoClosing] = useState(false);
+  const infoOpenRef = useRef(infoOpen);
+  const infoAnimated = useRef(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
 
@@ -96,23 +100,49 @@ export default function App() {
     };
   }, []);
 
-  // ---- detail view lives on the history stack so system back / edge swipe closes it
-  const open = useCallback((id: string, preview?: Item) => {
-    window.history.pushState({ detail: id, preview }, "");
-    setDetailId(id);
-    setPreviewItem(preview ?? null);
-    setInfoOpen(false);
+  useEffect(() => {
+    infoOpenRef.current = infoOpen;
+  }, [infoOpen]);
+
+  const cancelCloseTimer = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
   }, []);
+
+  // ---- detail view lives on the history stack so system back / edge swipe closes it
+  const open = useCallback(
+    (id: string, preview?: Item) => {
+      window.history.pushState({ detail: id, preview }, "");
+      setDetailId(id);
+      setPreviewItem(preview ?? null);
+      cancelCloseTimer();
+      infoAnimated.current = false;
+      setInfoClosing(false);
+      setInfoOpen(false);
+    },
+    [cancelCloseTimer],
+  );
   // The info sheet is a history entry too: the first system back closes the
   // sheet, the second closes the detail view.
   const openInfo = useCallback(() => {
     if (!detailId || infoOpen) return;
+    cancelCloseTimer();
+    infoAnimated.current = false;
+    setInfoClosing(false);
     window.history.pushState({ detail: detailId, preview: previewItem, info: true }, "");
     setInfoOpen(true);
-  }, [detailId, previewItem, infoOpen]);
+  }, [detailId, previewItem, infoOpen, cancelCloseTimer]);
+  // Called once the sheet has already played its roll-down animation.
+  const dismissInfo = useCallback(() => {
+    infoAnimated.current = true;
+    if (window.history.state?.info) window.history.back();
+    else setInfoOpen(false);
+  }, []);
   const closeInfo = useCallback(() => {
     if (window.history.state?.info) window.history.back();
-    setInfoOpen(false);
+    else setInfoOpen(false);
   }, []);
   const close = useCallback(() => {
     if (infoOpen) {
@@ -139,13 +169,30 @@ export default function App() {
   useEffect(() => {
     const onPop = () => {
       const state = window.history.state as { detail?: string; preview?: Item; info?: boolean } | null;
+      const nowInfo = !!state?.info;
       setDetailId(state?.detail ?? null);
       setPreviewItem(state?.preview ?? null);
-      setInfoOpen(!!state?.info);
+      // A system back / edge swipe has no in-sheet animation, so keep the sheet
+      // mounted just long enough for it to roll down before unmounting.
+      if (infoOpenRef.current && !nowInfo && !infoAnimated.current) {
+        const ms = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 160;
+        cancelCloseTimer();
+        setInfoClosing(true);
+        closeTimer.current = setTimeout(() => {
+          setInfoOpen(false);
+          setInfoClosing(false);
+          closeTimer.current = null;
+        }, ms);
+      } else {
+        cancelCloseTimer();
+        setInfoClosing(false);
+        setInfoOpen(nowInfo);
+        infoAnimated.current = false;
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [cancelCloseTimer]);
 
   const detail = detailId ? items.find((i) => i.id === detailId) ?? (previewItem?.id === detailId ? previewItem : undefined) : undefined;
   useEffect(() => {
@@ -247,8 +294,9 @@ export default function App() {
           item={detail}
           data={eps[detail.id]}
           infoOpen={infoOpen}
+          infoClosing={infoClosing}
           onOpenInfo={openInfo}
-          onCloseInfo={closeInfo}
+          onCloseInfo={dismissInfo}
           onClose={close}
           onUntrack={untrack}
         />

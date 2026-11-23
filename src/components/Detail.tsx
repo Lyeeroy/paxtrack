@@ -78,6 +78,7 @@ export default function Detail({
   item,
   data,
   infoOpen,
+  infoClosing,
   onOpenInfo,
   onCloseInfo,
   onClose,
@@ -86,6 +87,7 @@ export default function Detail({
   item: Item;
   data: EpData | undefined;
   infoOpen: boolean;
+  infoClosing: boolean;
   onOpenInfo: () => void;
   onCloseInfo: () => void;
   onClose: () => void;
@@ -309,7 +311,7 @@ export default function Detail({
       </div>
 
       {infoOpen ? (
-        <Sheet title={item.title} onClose={onCloseInfo}>
+        <Sheet title={item.title} onClose={onCloseInfo} closing={infoClosing}>
           <div className="px-4 pb-2 pt-1">
             {info?.overview ? (
               <p className="text-[14px] leading-relaxed text-dim">{info.overview}</p>

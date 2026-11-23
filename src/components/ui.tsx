@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 import { haptic } from "@/lib/toast";
 
 type IconProps = { className?: string };
@@ -254,12 +254,14 @@ export function SwipeRow({
 }
 
 /**
- * Bottom sheet for supplementary content. Drag the handle down (or tap the
- * backdrop / press Escape) to dismiss; drag transforms stay in the DOM.
+ * Bottom sheet for supplementary content. Grab anywhere and drag down to
+ * dismiss; the panel rolls fully off-screen before it unmounts.
  */
-export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({ title, onClose, closing = false, children }: { title: string; onClose: () => void; closing?: boolean; children: ReactNode }) {
   const panel = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: number; y: number; dy: number } | null>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: number; y: number; dy: number; dragging: boolean } | null>(null);
+  const closingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   const titleId = useId();
 
@@ -267,13 +269,39 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  const animateOut = useCallback(() => {
+    if (closingRef.current) return undefined;
+    closingRef.current = true;
+    const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const ms = reduced ? 0 : 160;
+    const p = panel.current;
+    if (p) {
+      p.style.transition = `transform ${ms}ms ease-in`;
+      p.style.transform = `translate3d(0,${p.offsetHeight}px,0)`;
+    }
+    if (backdrop.current) {
+      backdrop.current.style.transition = `opacity ${ms}ms ease-in`;
+      backdrop.current.style.opacity = "0";
+    }
+    return ms;
+  }, []);
+
+  const closeAnimated = useCallback(() => {
+    const ms = animateOut();
+    if (ms !== undefined) setTimeout(() => onCloseRef.current(), ms);
+  }, [animateOut]);
+
+  useEffect(() => {
+    if (closing) animateOut();
+  }, [closing, animateOut]);
+
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     panel.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onCloseRef.current();
+        closeAnimated();
         return;
       }
       if (e.key !== "Tab" || !panel.current) return;
@@ -299,7 +327,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
       window.removeEventListener("keydown", onKey);
       previous?.focus();
     };
-  }, []);
+  }, [closeAnimated]);
 
   const snapBack = () => {
     if (!panel.current) return;
@@ -307,48 +335,52 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     panel.current.style.transform = "";
   };
 
+  const finishDrag = (cancelled = false) => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    if (cancelled) snapBack();
+    else if (d.dragging && d.dy > 72) {
+      haptic();
+      closeAnimated();
+    } else snapBack();
+  };
+
   return (
     <div data-swipe className="fixed inset-0 z-[45]" onPointerDown={(e) => e.stopPropagation()}>
-      <div aria-hidden className="absolute inset-0 touch-none bg-black/70" onClick={onClose} />
+      <div ref={backdrop} aria-hidden className="absolute inset-0 touch-none bg-black/70" onClick={closeAnimated} />
       <div
         ref={panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="anim-sheet absolute inset-x-0 bottom-0 mx-auto max-w-xl overflow-hidden rounded-t-2xl border-t border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+16px)]"
-      >
-        <div
-          className="touch-none select-none px-4 pb-2 pt-3"
-          onPointerDown={(e) => {
-            if (e.pointerType === "mouse" && e.button !== 0) return;
-            if ((e.target as HTMLElement).closest("button")) return;
-            drag.current = { id: e.pointerId, y: e.clientY, dy: 0 };
+        onPointerDown={(e) => {
+          if (closingRef.current) return;
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          if ((e.target as HTMLElement).closest("button")) return;
+          drag.current = { id: e.pointerId, y: e.clientY, dy: 0, dragging: false };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d || d.id !== e.pointerId) return;
+          const delta = e.clientY - d.y;
+          // Downward only: upward drags belong to the scrollable content.
+          if (!d.dragging) {
+            if (delta <= 8) return;
+            d.dragging = true;
             e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            const d = drag.current;
-            if (!d || d.id !== e.pointerId) return;
-            d.dy = Math.max(0, Math.min(600, e.clientY - d.y));
-            if (panel.current) {
-              panel.current.style.transition = "none";
-              panel.current.style.transform = `translate3d(0,${d.dy}px,0)`;
-            }
-          }}
-          onPointerUp={() => {
-            const d = drag.current;
-            drag.current = null;
-            if (!d) return;
-            if (d.dy > 72) {
-              haptic();
-              onCloseRef.current();
-            } else snapBack();
-          }}
-          onPointerCancel={() => {
-            drag.current = null;
-            snapBack();
-          }}
-        >
+            if (panel.current) panel.current.style.transition = "none";
+          }
+          d.dy = Math.max(0, Math.min(600, delta));
+          if (panel.current) panel.current.style.transform = `translate3d(0,${d.dy}px,0)`;
+          e.preventDefault();
+        }}
+        onPointerUp={() => finishDrag()}
+        onPointerCancel={() => finishDrag(true)}
+        className="anim-sheet absolute inset-x-0 bottom-0 mx-auto max-w-xl select-none overflow-hidden rounded-t-2xl border-t border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+16px)]"
+      >
+        <div className="touch-none px-4 pb-2 pt-3">
           <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-line" />
           <div className="mt-3 min-w-0">
             <h2 id={titleId} className="text-[15px] font-medium">
@@ -357,7 +389,9 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
             <p className="truncate text-xs text-dim">{title}</p>
           </div>
         </div>
-        <div className="max-h-[68vh] overflow-y-auto overscroll-contain">{children}</div>
+        <div data-sheet-scroll className="max-h-[68vh] touch-pan-y overflow-y-auto overscroll-contain">
+          {children}
+        </div>
       </div>
     </div>
   );

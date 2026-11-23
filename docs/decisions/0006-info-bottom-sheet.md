@@ -14,7 +14,7 @@ ADR 0005 and `06-ui-design.md` prefer in-place interactions and discourage modal
 Tapping the detail hero poster or title opens a **bottom sheet** with the extra information. It is a deliberate, narrow exception to the "no modal" preference, requested explicitly for this feature. To keep the phone-first guarantees:
 
 - local facts render instantly; TMDB extras fill in from the existing `/api/tmdb/title` response or a deduplicated on-demand fetch, cached in memory for the session only;
-- the sheet is dismissible by dragging the handle down (72 px, DOM-written transform), by tapping the backdrop, and by Escape;
+- the sheet is dismissible by dragging it down from anywhere on the panel (72 px, DOM-written transform; upward drags still scroll the content), by tapping the backdrop, and by Escape; closing animates the panel all the way off-screen (160 ms) instead of unmounting it instantly;
 - it is on the history stack, so the first system back / edge swipe closes the sheet and the second closes the detail view;
 - it uses the existing surface tokens, safe-area insets, 160 ms motion and reduced-motion rule, with `role="dialog"`, focus management and a focus trap.
 
