@@ -5,12 +5,13 @@ import { initAuth } from "@/lib/auth";
 import { checkNotifications, notificationsEnabled, registerPeriodic } from "@/lib/notify";
 import { refreshStale } from "@/lib/refresh";
 import { discardPreview, getSnapshot, getStoreEpoch, initStore, useStore } from "@/lib/store";
-import { startAutoSync } from "@/lib/sync";
-import { dismissToast, useToast } from "@/lib/toast";
+import { startAutoSync, syncNow } from "@/lib/sync";
+import { dismissToast, showToast, useToast } from "@/lib/toast";
 import type { Item } from "@/lib/types";
 import Detail from "./Detail";
 import History from "./History";
 import Library from "./Library";
+import PullToRefresh from "./PullToRefresh";
 import Search from "./Search";
 import Settings from "./Settings";
 import Upcoming from "./Upcoming";
@@ -62,6 +63,16 @@ export default function App() {
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
   const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+
+  // Full manual reload: cloud sync, all metadata, then release checks.
+  const refreshAll = useCallback(async () => {
+    await syncNow();
+    await refreshStale(0);
+    const s = getSnapshot();
+    void checkNotifications(s.items, s.eps, getStoreEpoch());
+    showToast("Refreshed");
+  }, []);
 
   // ---- boot: local DB -> sync -> background refresh -> notifications
   useEffect(() => {
@@ -120,6 +131,7 @@ export default function App() {
   }, []);
 
   const detail = detailId ? items.find((i) => i.id === detailId) ?? (previewItem?.id === detailId ? previewItem : undefined) : undefined;
+
   useEffect(() => {
     // A detail view must close when its item disappears (for example, when it
     // was deleted on another device).
@@ -146,8 +158,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-[calc(100dvh+1px)] bg-black">
+    <div className="min-h-dvh bg-black">
       <main
+        ref={mainRef}
         className="mx-auto min-h-dvh max-w-xl pb-[calc(env(safe-area-inset-bottom)+96px)]"
         aria-hidden={!!detail}
         onPointerDown={(e) => {
@@ -214,6 +227,7 @@ export default function App() {
       </nav>
 
       {detail ? <Detail key={detail.id} item={detail} data={eps[detail.id]} onClose={close} /> : null}
+      <PullToRefresh target={mainRef} onRefresh={refreshAll} enabled={!detail} />
       <Toaster />
     </div>
   );
