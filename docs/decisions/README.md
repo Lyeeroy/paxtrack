@@ -29,3 +29,4 @@ Write about *why*, not *what* — the code already says what. Update the status 
 - [0003 — Username auth mode as the default](./0003-username-auth-mode.md) — no email required, derived non-deliverable address.
 - [0004 — Previews and soft-delete tombstones](./0004-previews-and-tombstones.md) — why deleted items stay in the map and search results are not persisted on open.
 - [0005 — Phone-first, gesture-driven, instant navigation](./0005-phone-first-gesture-navigation.md) — why interaction cost outranks extra features and desktop conventions.
+- [0006 — Info bottom sheet on the detail view](./0006-info-bottom-sheet.md) — why this one modal pattern is allowed, and the constraints it keeps.

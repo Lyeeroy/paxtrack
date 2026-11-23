@@ -3,11 +3,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { quickWatch } from "@/lib/actions";
 import { flatEps, formatEp, relDay, statsFor, todayStr, type Ep } from "@/lib/episodes";
-import { refreshItem } from "@/lib/refresh";
+import { cachedInfo, loadInfo, refreshItem, type TitleInfo } from "@/lib/refresh";
 import { markUpTo, removeItem, setSeason, setStatus, toggleEpisode, unmarkFrom } from "@/lib/store";
 import { haptic, showToast } from "@/lib/toast";
 import type { EpData, Item, Status } from "@/lib/types";
-import { IconBack, IconCheck, Poster, Progress, SwipeRow, TypeTag } from "./ui";
+import { IconBack, IconCheck, Poster, Progress, Sheet, SwipeRow, TypeTag } from "./ui";
 
 const STATUSES: { id: Status; label: string }[] = [
   { id: "watching", label: "Watching" },
@@ -15,6 +15,22 @@ const STATUSES: { id: Status; label: string }[] = [
   { id: "completed", label: "Done" },
   { id: "dropped", label: "Dropped" },
 ];
+
+function formatRuntime(min: number | null) {
+  if (!min || min <= 0) return null;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h ? `${h}h${m ? ` ${m}m` : ""}` : `${m}m`;
+}
+
+function InfoRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 px-4 py-3.5">
+      <dt className="shrink-0 text-xs text-faint">{label}</dt>
+      <dd className="text-right text-[15px] text-fg">{value || "—"}</dd>
+    </div>
+  );
+}
 
 const EpRow = memo(function EpRow({ id, ep, watched, aired }: { id: string; ep: Ep; watched: boolean; aired: boolean }) {
   return (
@@ -61,16 +77,24 @@ const EpRow = memo(function EpRow({ id, ep, watched, aired }: { id: string; ep: 
 export default function Detail({
   item,
   data,
+  infoOpen,
+  onOpenInfo,
+  onCloseInfo,
   onClose,
   onUntrack,
 }: {
   item: Item;
   data: EpData | undefined;
+  infoOpen: boolean;
+  onOpenInfo: () => void;
+  onCloseInfo: () => void;
   onClose: () => void;
   onUntrack: (item: Item) => void;
 }) {
   const [season, setSeasonSel] = useState<number | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [confirmUntrack, setConfirmUntrack] = useState(false);
+  const [info, setInfo] = useState<TitleInfo | null>(() => cachedInfo(item.id));
   const edge = useRef<{ x: number; y: number } | null>(null);
   const today = todayStr();
 
@@ -79,6 +103,17 @@ export default function Detail({
     if ((item.type === "tv" && !data) || stale) void refreshItem(item);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
+
+  useEffect(() => {
+    if (!infoOpen || info) return;
+    let alive = true;
+    void loadInfo(item).then((r) => {
+      if (alive && r) setInfo(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [infoOpen, info, item]);
 
   const st = useMemo(() => statsFor(item, data, today), [item, data, today]);
   const eps = useMemo(() => flatEps(data), [data]);
@@ -98,6 +133,7 @@ export default function Detail({
       role="dialog"
       aria-label={item.title}
       onPointerDownCapture={(e) => {
+        if ((e.target as HTMLElement).closest("[data-swipe]")) return;
         if (e.clientX < 24) {
           edge.current = { x: e.clientX, y: e.clientY };
           e.stopPropagation();
@@ -109,7 +145,7 @@ export default function Detail({
         if (s && e.clientX - s.x > 70 && Math.abs(e.clientY - s.y) < 60) onClose();
       }}
     >
-      <div className="mx-auto max-w-xl pb-[calc(env(safe-area-inset-bottom)+32px)]">
+      <div className="mx-auto max-w-xl pb-[calc(env(safe-area-inset-bottom)+32px)]" aria-hidden={infoOpen}>
         <div className="sticky top-0 z-10 flex items-center bg-black/90 px-2 pt-[env(safe-area-inset-top)]">
           <button onClick={onClose} aria-label="Back" className="flex h-12 w-12 items-center justify-center rounded-full text-fg active:bg-surface">
             <IconBack />
@@ -118,15 +154,28 @@ export default function Detail({
         </div>
 
         <div className="flex gap-4 px-4 pt-2">
-          <Poster path={item.poster} title={item.title} w={80} h={120} />
+          <button
+            onClick={onOpenInfo}
+            aria-haspopup="dialog"
+            aria-expanded={infoOpen}
+            aria-label={`Details for ${item.title}`}
+            className="shrink-0 rounded-md active:opacity-80"
+          >
+            <Poster path={item.poster} title={item.title} w={80} h={120} />
+          </button>
           <div className="min-w-0 flex-1 pt-1">
-            <h1 className="text-xl font-semibold leading-tight">{item.title}</h1>
+            <h1 className="text-xl font-semibold leading-tight">
+              <button onClick={onOpenInfo} aria-haspopup="dialog" aria-expanded={infoOpen} className="max-w-full truncate text-left active:opacity-80">
+                {item.title}
+              </button>
+            </h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-dim">
               <TypeTag anime={item.anime} type={item.type} />
               {meta.map((m) => (
                 <span key={m}>· {m}</span>
               ))}
             </div>
+            <p className="mt-1 text-[11px] text-faint">Tap poster or title for details</p>
             <div className="mt-4">
               <div className="mb-1.5 flex justify-between text-xs text-dim">
                 <span>{item.type === "movie" ? (item.watched.m ? "Watched" : "Not watched") : `${st.watched} / ${st.aired || st.total} watched`}</span>
@@ -140,19 +189,37 @@ export default function Detail({
         <div role="radiogroup" aria-label="Status" className="mt-5 grid grid-cols-4 gap-1 px-4">
           {STATUSES.map((s) => {
             const active = !item.preview && item.status === s.id;
+            const armed = active && confirmUntrack;
             return (
               <button
                 key={s.id}
                 role="radio"
                 aria-checked={active}
-                onClick={() => (active ? onUntrack(item) : setStatus(item.id, s.id))}
-                className={`h-10 rounded-lg text-[13px] ${active ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"}`}
+                onClick={() => {
+                  if (active && st.watched > 0 && !confirmUntrack) {
+                    setConfirmUntrack(true);
+                    setTimeout(() => setConfirmUntrack(false), 3000);
+                    return;
+                  }
+                  setConfirmUntrack(false);
+                  if (active) onUntrack(item);
+                  else setStatus(item.id, s.id);
+                }}
+                className={`h-10 rounded-lg text-[13px] ${
+                  armed ? "bg-danger/15 text-danger" : active ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"
+                }`}
               >
-                {s.label}
+                {armed ? "Tap again" : s.label}
               </button>
             );
           })}
         </div>
+        {confirmUntrack && st.watched > 0 ? (
+          <p role="status" className="px-4 pt-2 text-center text-xs text-danger">
+            Removing this title deletes your watch history
+            {item.type === "movie" ? "" : ` · ${st.watched} episode${st.watched === 1 ? "" : "s"} watched`}. Tap the active status again to confirm.
+          </p>
+        ) : null}
 
         <div className="px-4 pt-3">
           {item.type === "movie" ? (
@@ -240,6 +307,38 @@ export default function Detail({
           </button>
         </div>
       </div>
+
+      {infoOpen ? (
+        <Sheet title={item.title} onClose={onCloseInfo}>
+          <div className="px-4 pb-2 pt-1">
+            {info?.overview ? (
+              <p className="text-[14px] leading-relaxed text-dim">{info.overview}</p>
+            ) : (
+              <p className="text-[13px] text-faint">Synopsis is available when online.</p>
+            )}
+            {info?.genres?.length ? (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {info.genres.map((g) => (
+                  <span key={g} className="rounded-full bg-raised px-3 py-1.5 text-[13px] text-dim">
+                    {g}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <dl className="mt-5 divide-y divide-line/70 overflow-hidden rounded-2xl bg-surface">
+              <InfoRow label="Rating" value={info?.voteAverage ? `${info.voteAverage.toFixed(1)} / 10` : null} />
+              <InfoRow label={item.type === "movie" ? "Runtime" : "Episode length"} value={formatRuntime(info?.runtime ?? null)} />
+              <InfoRow label="Release date" value={item.releaseDate?.slice(0, 10) ?? null} />
+              <InfoRow label="Type" value={item.anime ? "Anime" : item.type === "tv" ? "TV series" : "Movie"} />
+              <InfoRow
+                label={item.type === "tv" ? "Series status" : "Release status"}
+                value={item.tvStatus ?? (item.type === "tv" && st.upcoming ? "Returning Series" : null)}
+              />
+              <InfoRow label="Added" value={new Date(item.addedAt).toISOString().slice(0, 10)} />
+            </dl>
+          </div>
+        </Sheet>
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,65 @@ import type { Item, TitlePayload } from "./types";
 
 const inflight = new Map<string, Promise<boolean>>();
 
+/** Descriptive metadata shown in the info sheet. Session-only; never persisted. */
+export interface TitleInfo {
+  overview: string | null;
+  genres: string[];
+  voteAverage: number | null;
+  runtime: number | null;
+}
+
+const infoCache = new Map<string, { info: TitleInfo; at: number }>();
+const infoInflight = new Map<string, Promise<TitleInfo | null>>();
+const INFO_TTL = 24 * 3600_000;
+
+function cacheInfo(id: string, p: TitlePayload) {
+  infoCache.set(id, {
+    info: {
+      overview: p.overview ?? null,
+      genres: p.genres ?? [],
+      voteAverage: p.voteAverage ?? null,
+      runtime: p.runtime ?? null,
+    },
+    at: Date.now(),
+  });
+}
+
+/** Metadata already loaded this session (the detail refresh seeds this cache). */
+export function cachedInfo(id: string): TitleInfo | null {
+  const c = infoCache.get(id);
+  if (!c) return null;
+  if (Date.now() - c.at > INFO_TTL) {
+    infoCache.delete(id);
+    return null;
+  }
+  return c.info;
+}
+
+/** Load descriptive metadata on demand; concurrent opens share one request. */
+export function loadInfo(item: Item): Promise<TitleInfo | null> {
+  const cached = cachedInfo(item.id);
+  if (cached) return Promise.resolve(cached);
+  if (typeof navigator !== "undefined" && !navigator.onLine) return Promise.resolve(null);
+  const pending = infoInflight.get(item.id);
+  if (pending) return pending;
+  const p = (async () => {
+    try {
+      const res = await fetch(`/api/tmdb/title?type=${item.type}&id=${item.tmdbId}`);
+      if (!res.ok) return null;
+      const data = (await res.json()) as TitlePayload;
+      cacheInfo(item.id, data);
+      return cachedInfo(item.id);
+    } catch {
+      return null;
+    } finally {
+      infoInflight.delete(item.id);
+    }
+  })();
+  infoInflight.set(item.id, p);
+  return p;
+}
+
 export function refreshItem(item: Item): Promise<boolean> {
   const startedEpoch = getStoreEpoch();
   // Include the epoch so a request from a previous account cannot block the
@@ -17,6 +76,7 @@ export function refreshItem(item: Item): Promise<boolean> {
       const data = (await res.json()) as TitlePayload;
       // The local library was replaced while this request was in flight.
       if (getStoreEpoch() !== startedEpoch) return false;
+      cacheInfo(item.id, data);
       saveTitle(item.id, data);
       return true;
     } catch {

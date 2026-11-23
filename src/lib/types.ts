@@ -43,6 +43,11 @@ export interface TitlePayload {
   anime: boolean;
   status?: string;
   releaseDate?: string | null;
+  /** Descriptive metadata for the info sheet; cached in memory, not persisted. */
+  overview?: string | null;
+  genres?: string[];
+  voteAverage?: number | null;
+  runtime?: number | null;
   seasons: EpData["seasons"];
 }
 

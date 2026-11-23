@@ -26,7 +26,9 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 | Drag horizontally | Screen (outside swipe rows/inputs) | Switch tabs |
 | Drag from left edge | Detail view | Go back / close detail |
 | Tap twice | Remove button | Confirm removal |
-| Tap active status | Detail status buttons | Remove from library (toast; detail stays open, pick a status to re-add) |
+| Tap active status | Detail status buttons | Remove from library (toast; detail stays open, pick a status to re-add). With watched progress, the first tap arms a 3 s confirmation instead |
+| Tap poster or title | Detail hero | Open the info bottom sheet |
+| Drag down (72 px) | Info sheet handle | Dismiss the info sheet |
 
 - The threshold is 72 px (70 px for tab and edge swipes). Drag transforms are written straight to the DOM with no React re-render so it stays at 60 fps on budget phones; `haptic()` fires on completion.
 - A revealed action is always mirrored by a tap control (the `+` button, status buttons, the back button). **Gestures accelerate; they never gate.** Every gesture must have a non-gesture path.
@@ -105,7 +107,8 @@ Reuse these before creating anything new:
 - **Progress** — a 3 px `rounded-full bg-line` track with an `origin-left bg-accent` fill animated by `scaleX` over 300 ms, plus `role="progressbar"` and aria values.
 - **Episode row** — `min-h-[52px]`, episode number `w-8 text-xs tabular-nums text-faint`, name `text-[14px]`, air date `text-[11px] text-faint`, and a 24 px round checkbox that is `border-accent bg-accent text-black` when watched. Unaired episodes are `opacity-50`.
 - **Empty state** — `px-8 py-20 text-center`, `text-[15px] text-dim` title and `text-xs text-faint` hint.
-- **Destructive action** — starts as `text-faint`, becomes `bg-danger/15 text-danger` only after the second tap (3 s window). Other buttons do not use danger styling.
+- **Destructive action** — starts as `text-faint`, becomes `bg-danger/15 text-danger` only after the second tap (3 s window). Other buttons do not use danger styling. Removing via the active status button with watched progress is a stronger case: the first tap arms a 3 s confirmation, shows a `text-danger` line naming what will be deleted (watch history, with the episode count) and switches that button to "Tap again" instead of removing immediately.
+- **Info sheet** (`Sheet` in `ui.tsx`) — the one deliberate modal exception ([ADR 0006](./decisions/0006-info-bottom-sheet.md)), opened by tapping the detail hero poster or title. Backdrop `bg-black/70`, panel `rounded-t-2xl bg-surface` pinned bottom with safe-area padding, `z-[45]` (above Detail, below toasts), grab handle, `max-h-[68vh]` scroll area. Local facts render immediately; TMDB extras fill in without blocking. Drag-down, backdrop and Escape all dismiss; it sits on the history stack so the first back closes the sheet. Reuse `Sheet` rather than creating another modal.
 - **Swipe affordances** — revealed backgrounds are `bg-accent/15 text-accent` on the right ("mark") and `bg-warn/15 text-warn` on the left ("undo/clear"), with labels at `text-sm font-medium`. Threshold is 72 px.
 
 ## Motion and feedback

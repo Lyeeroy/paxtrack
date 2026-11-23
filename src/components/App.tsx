@@ -60,6 +60,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("library");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
   const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
 
@@ -100,15 +101,31 @@ export default function App() {
     window.history.pushState({ detail: id, preview }, "");
     setDetailId(id);
     setPreviewItem(preview ?? null);
+    setInfoOpen(false);
+  }, []);
+  // The info sheet is a history entry too: the first system back closes the
+  // sheet, the second closes the detail view.
+  const openInfo = useCallback(() => {
+    if (!detailId || infoOpen) return;
+    window.history.pushState({ detail: detailId, preview: previewItem, info: true }, "");
+    setInfoOpen(true);
+  }, [detailId, previewItem, infoOpen]);
+  const closeInfo = useCallback(() => {
+    if (window.history.state?.info) window.history.back();
+    setInfoOpen(false);
   }, []);
   const close = useCallback(() => {
+    if (infoOpen) {
+      closeInfo();
+      return;
+    }
     if (detailId) discardPreview(detailId);
     if (window.history.state?.detail) window.history.back();
     else {
       setDetailId(null);
       setPreviewItem(null);
     }
-  }, [detailId]);
+  }, [detailId, infoOpen, closeInfo]);
   // Tapping the active status removes the title but keeps the detail open as an
   // untracked preview, so another status can add it back without leaving here.
   const untrack = useCallback((item: Item) => {
@@ -121,9 +138,10 @@ export default function App() {
   }, []);
   useEffect(() => {
     const onPop = () => {
-      const state = window.history.state as { detail?: string; preview?: Item } | null;
+      const state = window.history.state as { detail?: string; preview?: Item; info?: boolean } | null;
       setDetailId(state?.detail ?? null);
       setPreviewItem(state?.preview ?? null);
+      setInfoOpen(!!state?.info);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -223,7 +241,18 @@ export default function App() {
         </ul>
       </nav>
 
-      {detail ? <Detail key={detail.id} item={detail} data={eps[detail.id]} onClose={close} onUntrack={untrack} /> : null}
+      {detail ? (
+        <Detail
+          key={detail.id}
+          item={detail}
+          data={eps[detail.id]}
+          infoOpen={infoOpen}
+          onOpenInfo={openInfo}
+          onCloseInfo={closeInfo}
+          onClose={close}
+          onUntrack={untrack}
+        />
+      ) : null}
       <Toaster />
     </div>
   );

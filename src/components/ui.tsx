@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { haptic } from "@/lib/toast";
 
 type IconProps = { className?: string };
@@ -248,6 +248,116 @@ export function SwipeRow({
         }}
       >
         {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Bottom sheet for supplementary content. Drag the handle down (or tap the
+ * backdrop / press Escape) to dismiss; drag transforms stay in the DOM.
+ */
+export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: number; y: number; dy: number } | null>(null);
+  const onCloseRef = useRef(onClose);
+  const titleId = useId();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    panel.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panel.current) return;
+      const focusable = Array.from(
+        panel.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+      ).filter((el) => el.getClientRects().length > 0);
+      if (!focusable.length) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previous?.focus();
+    };
+  }, []);
+
+  const snapBack = () => {
+    if (!panel.current) return;
+    panel.current.style.transition = "transform 180ms ease-out";
+    panel.current.style.transform = "";
+  };
+
+  return (
+    <div data-swipe className="fixed inset-0 z-[45]" onPointerDown={(e) => e.stopPropagation()}>
+      <div aria-hidden className="absolute inset-0 touch-none bg-black/70" onClick={onClose} />
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="anim-sheet absolute inset-x-0 bottom-0 mx-auto max-w-xl overflow-hidden rounded-t-2xl border-t border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+16px)]"
+      >
+        <div
+          className="touch-none select-none px-4 pb-2 pt-3"
+          onPointerDown={(e) => {
+            if (e.pointerType === "mouse" && e.button !== 0) return;
+            if ((e.target as HTMLElement).closest("button")) return;
+            drag.current = { id: e.pointerId, y: e.clientY, dy: 0 };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            const d = drag.current;
+            if (!d || d.id !== e.pointerId) return;
+            d.dy = Math.max(0, Math.min(600, e.clientY - d.y));
+            if (panel.current) {
+              panel.current.style.transition = "none";
+              panel.current.style.transform = `translate3d(0,${d.dy}px,0)`;
+            }
+          }}
+          onPointerUp={() => {
+            const d = drag.current;
+            drag.current = null;
+            if (!d) return;
+            if (d.dy > 72) {
+              haptic();
+              onCloseRef.current();
+            } else snapBack();
+          }}
+          onPointerCancel={() => {
+            drag.current = null;
+            snapBack();
+          }}
+        >
+          <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-line" />
+          <div className="mt-3 min-w-0">
+            <h2 id={titleId} className="text-[15px] font-medium">
+              Details
+            </h2>
+            <p className="truncate text-xs text-dim">{title}</p>
+          </div>
+        </div>
+        <div className="max-h-[68vh] overflow-y-auto overscroll-contain">{children}</div>
       </div>
     </div>
   );

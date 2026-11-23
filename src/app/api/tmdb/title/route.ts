@@ -19,6 +19,9 @@ export async function GET(req: Request) {
         poster: m.poster_path ?? null,
         releaseDate: m.release_date || null,
         runtime: m.runtime ?? null,
+        overview: m.overview || null,
+        genres: (m.genres ?? []).map((g: any) => g.name as string).filter(Boolean),
+        voteAverage: m.vote_average ?? null,
         anime: (m.genres ?? []).some((g: any) => g.id === 16) && m.original_language === "ja",
         seasons: [],
         status: m.status,
@@ -56,6 +59,10 @@ export async function GET(req: Request) {
         (d.genres ?? []).some((g: any) => g.id === 16) &&
         (d.original_language === "ja" || (d.origin_country ?? []).includes("JP")),
       status: d.status,
+      overview: d.overview || null,
+      genres: (d.genres ?? []).map((g: any) => g.name as string).filter(Boolean),
+      voteAverage: d.vote_average ?? null,
+      runtime: (d.episode_run_time as number[] | undefined)?.[0] ?? null,
       seasons,
     });
   } catch (e) {

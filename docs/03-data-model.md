@@ -28,7 +28,7 @@ Defined in `src/lib/types.ts`.
 
 - `EpData` — `{ id, seasons: { n, eps: { e, name, air }[] }[] }`. Stored separately from `Item` because a full episode list is large and rarely changes. `air` is `YYYY-MM-DD` or `null` (TBA).
 - `SearchResult` — lightweight TMDB search row (`tmdbId`, `type`, `title`, `year`, `poster`, `anime`).
-- `TitlePayload` — the full metadata response used by `saveTitle()`.
+- `TitlePayload` — the full metadata response used by `saveTitle()`. Its optional `overview`, `genres`, `voteAverage` and `runtime` fields are descriptive extras for the info sheet: they are injected into an in-memory cache by `refresh.ts` (`cachedInfo` / `loadInfo`) and are **not** copied onto `Item`, so they are never persisted or synced. The TMDB title route returns them for both movies and TV (TV runtime is the episode runtime).
 - `Backup` — `{ version: 1, exportedAt, items, eps }`.
 - `Ep` (derived, `episodes.ts`) — flattened episode with `key` (`${s}x${e}`) plus `s`, `e`, `name`, `air`. `flatEps()` memoizes per `EpData` object with a `WeakMap`.
 - `Stats` (derived, `episodes.ts`) — `watched`, `aired`, `total`, `progress`, `next`, `upcoming`, `backlog`, `lastAiredIdx`. Computed from the item + episode data + today; never stored.

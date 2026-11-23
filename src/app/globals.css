@@ -94,6 +94,17 @@ button {
 .anim-up {
   animation: fade-up 160ms ease-out;
 }
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.anim-sheet {
+  animation: sheet-up 160ms ease-out;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
