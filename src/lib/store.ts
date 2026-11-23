@@ -66,7 +66,9 @@ export function initStore(): Promise<void> {
 }
 
 function commit(item: Item, touch = true) {
-  const next = touch ? { ...item, updatedAt: Date.now() } : item;
+  // Keep the timestamp strictly newer than the current copy, so a re-add is
+  // never rejected by Supabase's last-write-wins rule (updated_at <= old one).
+  const next = touch ? { ...item, updatedAt: Math.max(Date.now(), item.updatedAt + 1) } : item;
   if (next.preview && touch) {
     // First real change promotes a preview into a persisted library item.
     const permanent = { ...next };
@@ -139,7 +141,9 @@ export function allItemsRaw(): Item[] {
 export function createPreview(r: SearchResult): Item {
   const id = `${r.type}-${r.tmdbId}`;
   const existing = items.get(id);
-  if (existing) return existing;
+  // A removed title stays in the map as a deleted tombstone. Reopening it from
+  // search must produce a fresh preview, otherwise edits keep it hidden forever.
+  if (existing && !existing.deleted) return existing;
   const now = Date.now();
   const item: Item = {
     id,
@@ -231,7 +235,8 @@ export function removeItem(id: string) {
 
 export function setStatus(id: string, status: Status) {
   const item = items.get(id);
-  if (!item || item.status === status) return;
+  if (!item || (item.status === status && !item.preview)) return;
+  // Tapping a status in a preview is how a removed title gets added back.
   commit({ ...item, status });
 }
 
