@@ -59,12 +59,30 @@ You do **not** need a database password or connection string in the app. The bro
 
 In the Supabase dashboard, open **Authentication → URL Configuration**:
 
-- **Site URL**: `http://localhost:3000` while developing
-- **Redirect URLs**: add `http://localhost:3000/**`
+- **Site URL**: `http://localhost:3000` for local development. Change it to your Vercel URL (for example `https://tracker-abc.vercel.app`) when you deploy — Supabase uses this address in auth emails when the app doesn't provide its own redirect.
+- **Redirect URLs**: add `http://localhost:3000/**` for development and `https://<your-vercel-domain>/**` for production (or a preview wildcard such as `https://*-your-team.vercel.app/**`).
 
-The app uses email/password sign-in. Confirmation and password-reset links land on `/auth/callback`, which exchanges the code for a session and then forwards to the app.
+The app uses email/password sign-in. Its sign-up and password-reset calls pass the current site origin as the redirect target, so every origin you sign in from must be in the allowlist. By default, confirmation and password-reset links go through Supabase's `/auth/v1/verify` endpoint and then land on `/auth/callback`, which exchanges the code for a session and forwards to the app.
+
+If a confirmation email contains `redirect_to=http://localhost:3000`, the Supabase **Site URL** is still set to localhost. Update it as above and request a new confirmation email (or sign up again from the deployed site).
 
 Email auth is enabled by default. For quick local development you can turn off **Confirm email** under **Authentication → Sign In / Providers → Email** so new accounts can sign in immediately. For a real deployment, leave confirmation on and configure your own SMTP provider under **Authentication → Emails → SMTP Settings**; Supabase's built-in email service is rate-limited and not meant for production traffic.
+
+### Customize the auth emails (optional)
+
+The email content itself is controlled by Supabase, not by this repo. Edit subjects and HTML under **Authentication → Emails → Templates**. To make the link point at your own domain instead of Supabase's verify endpoint, use this in the **Confirm signup** template:
+
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/">Confirm email address</a>
+```
+
+And in the **Reset password** template:
+
+```html
+<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset">Choose a new password</a>
+```
+
+`/auth/confirm` is a route in this app: it verifies the token on the server, writes the session cookie, then redirects to `next`. You can keep the default `{{ .ConfirmationURL }}` links if you prefer — just make sure Site URL and Redirect URLs are correct so they don't point to localhost. The **in-app** sign-in form is React code in `src/components/CloudSync.tsx` if you want to restyle that instead.
 
 ## 5. Environment variables
 
@@ -157,7 +175,8 @@ Data that only ever lived in the old server-side sync vault is not migrated auto
 ```text
 src/app/                 Next.js routes and pages
   api/tmdb/              Server-side TMDB search and title metadata
-  auth/callback/         Supabase auth code exchange
+  auth/callback/         Supabase auth code exchange (default email links)
+  auth/confirm/          Server-side email verification (custom email links)
   auth/reset/            Choose-a-new-password screen
 src/components/          UI (library, detail, settings, cloud sync, ...)
 src/lib/                 Local store, sync, auth, TMDB client, helpers
