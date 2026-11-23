@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { idbClear, idbFlush, idbGetAll, idbPut, idbPutIfNewer } from "./idb";
 import { flatEps, statsFor } from "./episodes";
-import type { EpData, Item, SearchResult, Status, TitlePayload } from "./types";
+import type { Backup, EpData, Item, SearchResult, Status, TitlePayload } from "./types";
 
 export interface Snapshot {
   items: Item[];
@@ -135,6 +135,62 @@ export async function applyRemote(remote: Item[]): Promise<boolean> {
 
 export function allItemsRaw(): Item[] {
   return [...items.values()].filter((i) => !i.preview);
+}
+
+export function allEpsRaw(): EpData[] {
+  return Object.values(epsObj);
+}
+
+export function createBackup(): Backup {
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    items: allItemsRaw().filter((i) => !i.deleted),
+    eps: allEpsRaw(),
+  };
+}
+
+/**
+ * Merge a backup into the local library using the same last-write-wins rule as
+ * cloud sync: an imported title only replaces the local copy when its
+ * `updatedAt` is newer. Episode lists are only filled in where missing — the
+ * local/TMDB-refreshed data is left untouched. Returns what actually changed.
+ */
+export async function importBackup(incomingItems: Item[], incomingEps: EpData[]): Promise<{ applied: number; eps: number }> {
+  const changed: Item[] = [];
+  for (const item of incomingItems) {
+    if (item.deleted || item.preview) continue;
+    const local = items.get(item.id);
+    if (!local || item.updatedAt > local.updatedAt) changed.push(item);
+  }
+  let applied = 0;
+
+  if (changed.length) {
+    // Persist before touching memory, like applyRemote, so a failed write does
+    // not leave the in-memory library claiming data that was never stored.
+    await idbPutIfNewer("items", changed);
+    for (const item of changed) {
+      const local = items.get(item.id);
+      if (!local || item.updatedAt > local.updatedAt) {
+        items.set(item.id, item);
+        applied++;
+      }
+    }
+    if (applied) {
+      emit();
+      // Let auto-sync push the restored titles to the cloud on the next run.
+      changeListeners.forEach((l) => l());
+    }
+  }
+
+  const newEps = incomingEps.filter((e) => !epsObj[e.id]);
+  if (newEps.length) {
+    for (const e of newEps) await idbPut("eps", e);
+    epsObj = { ...epsObj, ...Object.fromEntries(newEps.map((e) => [e.id, e])) };
+    emit();
+  }
+
+  return { applied, eps: newEps.length };
 }
 
 /** Open a search result in the detail view without adding it to the library. */

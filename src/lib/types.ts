@@ -45,3 +45,11 @@ export interface TitlePayload {
   releaseDate?: string | null;
   seasons: EpData["seasons"];
 }
+
+/** Shape written by Settings → Export backup. Old backups only had `items`. */
+export interface Backup {
+  version: 1;
+  exportedAt: string;
+  items: Item[];
+  eps: EpData[];
+}

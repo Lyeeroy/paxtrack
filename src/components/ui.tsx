@@ -64,6 +64,22 @@ export const IconBack = ({ className }: IconProps) => (
     <path d="m15 5-7 7 7 7" />
   </svg>
 );
+export const IconDownload = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+  </svg>
+);
+export const IconCopy = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <rect x="8" y="8" width="12" height="12" rx="2" />
+    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+  </svg>
+);
+export const IconUpload = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+  </svg>
+);
 
 export function posterUrl(path: string | null, w: 92 | 154 | 185 = 154) {
   return path ? `https://image.tmdb.org/t/p/w${w}${path}` : null;

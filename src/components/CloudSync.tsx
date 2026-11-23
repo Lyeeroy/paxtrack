@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { isEmailAuth, normalizeUsername, USERNAME_HINT } from "@/lib/auth-config";
 import {
+  changePassword,
   describeAuthError,
   displayName,
   resetPassword,
@@ -29,6 +30,12 @@ export default function CloudSync() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const statusText =
     sync.status === "syncing"
@@ -116,6 +123,33 @@ export default function CloudSync() {
     }
   };
 
+  const submitPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    if (newPassword.length < 8) {
+      setPasswordError("Use at least 8 characters for your new password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords don't match.");
+      return;
+    }
+    setPasswordBusy(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setChangingPassword(false);
+      showToast("Password changed");
+    } catch (err) {
+      const msg = describeAuthError(err);
+      setPasswordError(/wrong (username|email) or password/i.test(msg) ? "Current password is incorrect." : msg);
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
+
   return (
     <section className="px-4 pt-5">
       <h2 className="pb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Cloud sync</h2>
@@ -161,6 +195,76 @@ export default function CloudSync() {
                 Sync now
               </button>
             </div>
+            <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+              <div>
+                <p className="text-[15px]">Password</p>
+                <p className="mt-0.5 text-xs text-dim">Change the password for this account.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setChangingPassword((v) => !v);
+                  setPasswordError(null);
+                }}
+                className="h-10 shrink-0 rounded-full border border-line px-4 text-sm text-accent active:bg-raised"
+              >
+                {changingPassword ? "Cancel" : "Change"}
+              </button>
+            </div>
+            {changingPassword ? (
+              <form onSubmit={submitPasswordChange} className="px-4 py-3.5">
+                <label htmlFor="current-password" className="block text-xs text-dim">
+                  Current password
+                </label>
+                <input
+                  id="current-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className={inputClass}
+                />
+                <label htmlFor="new-password" className="mt-3 block text-xs text-dim">
+                  New password
+                </label>
+                <input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                  className={inputClass}
+                />
+                <label htmlFor="confirm-password" className="mt-3 block text-xs text-dim">
+                  Confirm new password
+                </label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                  required
+                  className={inputClass}
+                />
+                {passwordError ? (
+                  <p role="alert" className="mt-3 text-xs leading-relaxed text-warn">
+                    {passwordError}
+                  </p>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={passwordBusy}
+                  className="mt-4 h-10 w-full rounded-full bg-fg text-sm font-medium text-black active:opacity-80 disabled:opacity-50"
+                >
+                  {passwordBusy ? "Saving…" : "Change password"}
+                </button>
+              </form>
+            ) : null}
           </>
         ) : (
           <form onSubmit={submit} className="px-4 py-3.5">

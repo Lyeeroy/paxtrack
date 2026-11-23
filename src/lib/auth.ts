@@ -138,6 +138,18 @@ export async function updatePassword(password: string) {
   if (error) throw error;
 }
 
+/** Change the password while signed in, in both username and email mode. */
+export async function changePassword(current: string, next: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Your session expired. Sign in again.");
+  const identifier = isEmailAuth ? user.email : displayName(user);
+  if (!identifier) throw new Error("Couldn't identify your account. Sign out and back in.");
+  // Verifies the current password and refreshes the session first, so this
+  // also works when Supabase requires a recent reauthentication.
+  await signInWithPassword(identifier, current);
+  await updatePassword(next);
+}
+
 export async function signOut() {
   const { error } = await getSupabase().auth.signOut();
   if (error) throw error;
