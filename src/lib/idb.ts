@@ -58,16 +58,29 @@ export async function idbPut(store: string, value: unknown): Promise<void> {
   );
 }
 
+/** Put many values in one transaction (used by a full backup restore). */
+export async function idbPutMany(store: string, values: unknown[]): Promise<void> {
+  if (!values.length) return;
+  const db = await open();
+  return track(
+    new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(store, "readwrite");
+      const os = tx.objectStore(store);
+      values.forEach((value) => os.put(value));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }),
+  );
+}
+
 /**
  * Write items only when they are newer than the copy already in IndexedDB.
- * Pass `allowEqual` for a restore, where a backup matching the stored copy must
- * be reapplied. The read and write happen in one transaction, so a cloud pull
- * can never overwrite a local edit that lands while the pull is being applied.
+ * The read and write happen in one transaction, so a cloud pull can never
+ * overwrite a local edit that lands while the pull is being applied.
  */
 export async function idbPutIfNewer<T extends { id: string; updatedAt: number }>(
   store: string,
   values: T[],
-  allowEqual = false,
 ): Promise<void> {
   if (!values.length) return;
   const db = await open();
@@ -79,7 +92,7 @@ export async function idbPutIfNewer<T extends { id: string; updatedAt: number }>
         const req = os.get(value.id);
         req.onsuccess = () => {
           const existing = req.result as T | undefined;
-          if (!existing || value.updatedAt > existing.updatedAt || (allowEqual && value.updatedAt === existing.updatedAt)) os.put(value);
+          if (!existing || value.updatedAt > existing.updatedAt) os.put(value);
         };
       });
       tx.oncomplete = () => resolve();

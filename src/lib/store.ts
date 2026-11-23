@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { idbClear, idbFlush, idbGetAll, idbPut, idbPutIfNewer } from "./idb";
+import { idbClear, idbFlush, idbGetAll, idbPut, idbPutIfNewer, idbPutMany } from "./idb";
 import { flatEps, statsFor } from "./episodes";
 import type { Backup, EpData, Item, SearchResult, Status, TitlePayload } from "./types";
 
@@ -150,50 +150,82 @@ export function createBackup(): Backup {
   };
 }
 
+export interface MergePlan {
+  add: number;
+  replace: number;
+  keep: number;
+}
+
+type BackupDecision = keyof MergePlan;
+
+function watchedCount(item: Item): number {
+  return Object.keys(item.watched).length;
+}
+
 /**
- * Merge a backup into the local library. A title is restored unless the local
- * copy is strictly newer (so newer progress is never overwritten), which also
- * means re-importing a backup with matching timestamps applies cleanly.
- * Episode lists are only filled in where missing — the local/TMDB-refreshed
- * data is left untouched. Returns what actually changed.
+ * The version with more watched episodes wins, regardless of timestamps. On a
+ * tie the backup wins, since that is the file the user chose to restore.
  */
-export async function importBackup(incomingItems: Item[], incomingEps: EpData[]): Promise<{ applied: number; eps: number; total: number }> {
-  const changed: Item[] = [];
+function backupDecision(incoming: Item): BackupDecision {
+  const local = items.get(incoming.id);
+  if (!local || local.deleted || local.preview) return "add";
+  return watchedCount(incoming) >= watchedCount(local) ? "replace" : "keep";
+}
+
+export function planBackupMerge(incomingItems: Item[]): MergePlan {
+  const plan: MergePlan = { add: 0, replace: 0, keep: 0 };
   for (const item of incomingItems) {
     if (item.deleted || item.preview) continue;
-    const local = items.get(item.id);
-    if (!local || item.updatedAt >= local.updatedAt) changed.push(item);
+    plan[backupDecision(item)]++;
   }
-  let applied = 0;
+  return plan;
+}
 
-  if (changed.length) {
-    // Persist before touching memory, like applyRemote, so a failed write does
-    // not leave the in-memory library claiming data that was never stored.
-    // Equal timestamps are allowed here (unlike a cloud pull) because a restore
-    // must reapply a backup that matches the current library.
-    await idbPutIfNewer("items", changed, true);
-    for (const item of changed) {
-      const local = items.get(item.id);
-      if (!local || item.updatedAt >= local.updatedAt) {
-        items.set(item.id, item);
-        applied++;
-      }
-    }
-    if (applied) {
-      emit();
-      // Let auto-sync push the restored titles to the cloud on the next run.
-      changeListeners.forEach((l) => l());
-    }
+/**
+ * Merge a backup into the local library using watched progress, not timestamps.
+ * Titles only in the backup are added, titles only in the library are kept, and
+ * matching titles take the version with more watched episodes (backup on ties).
+ * Applied titles get a fresh `updatedAt`: sync skips items older than its push
+ * cursor, and Supabase rejects cloud writes older than the stored row, so the
+ * old backup timestamp could never reach the cloud.
+ */
+export async function importBackup(incomingItems: Item[], incomingEps: EpData[]): Promise<{ added: number; replaced: number; eps: number }> {
+  const now = Date.now();
+  const writes: Item[] = [];
+  const appliedIds = new Set<string>();
+  let added = 0;
+  let replaced = 0;
+
+  for (const item of incomingItems) {
+    if (item.deleted || item.preview) continue;
+    const decision = backupDecision(item);
+    if (decision === "keep") continue;
+    writes.push({ ...item, deleted: false, preview: false, updatedAt: now });
+    appliedIds.add(item.id);
+    if (decision === "add") added++;
+    else replaced++;
   }
 
-  const newEps = incomingEps.filter((e) => !epsObj[e.id]);
-  if (newEps.length) {
-    for (const e of newEps) await idbPut("eps", e);
-    epsObj = { ...epsObj, ...Object.fromEntries(newEps.map((e) => [e.id, e])) };
+  // Apply the backup's episode lists to restored titles so their watched keys
+  // still line up; fill other missing lists, but never overwrite a local one
+  // for a title we are keeping.
+  const epsWrites: EpData[] = [];
+  for (const ep of incomingEps) {
+    if (appliedIds.has(ep.id) || !epsObj[ep.id]) epsWrites.push(ep);
+  }
+
+  if (writes.length || epsWrites.length) {
+    // Persist before touching memory, as applyRemote does, so a failed write
+    // cannot leave the in-memory library claiming data that was never stored.
+    await Promise.all([idbPutMany("items", writes), idbPutMany("eps", epsWrites)]);
+    for (const item of writes) items.set(item.id, item);
+    if (epsWrites.length) epsObj = { ...epsObj, ...Object.fromEntries(epsWrites.map((ep) => [ep.id, ep])) };
     emit();
+    // Let auto-sync push the restored titles to the cloud on the next run.
+    if (writes.length) changeListeners.forEach((l) => l());
   }
 
-  return { applied, eps: newEps.length, total: incomingItems.length };
+  return { added, replaced, eps: epsWrites.length };
 }
 
 /** Open a search result in the detail view without adding it to the library. */

@@ -10,7 +10,7 @@ A small, offline-first episode tracker for anime, TV shows and movies. Your libr
 - Optional release-day notifications
 - Username/password accounts by default (email mode optional) and multi-device sync through Supabase
 - Change your password in Settings while signed in (works in username mode too)
-- JSON backups you can download or copy to the clipboard, and import back with last-write-wins merging
+- JSON backups you can download or copy to the clipboard, and merge back by restored watched progress
 - Row Level Security: the database only ever returns your own library
 - Local-only mode when Supabase is not configured
 - Metadata and artwork from TMDB
@@ -186,7 +186,7 @@ Data that only ever lived in the old server-side sync vault is not migrated auto
 - TMDB requests go through this app's server routes so the API key stays private.
 - There is no analytics or third-party tracking in the app.
 - Settings → **Export backup (JSON)** has two actions: download a `tracker-backup.json` file, or copy the JSON to your clipboard. The backup contains your titles and their episode data, so watched progress is restored even offline.
-- Settings → **Import backup (JSON)** restores a backup. Titles are merged with last-write-wins: a title from the backup only replaces the local copy when it is newer, so an old backup cannot undo newer progress. When signed in, restored titles are synced to your account on the next sync. Both the current backup format and older backups that contain only `items` are accepted.
+- Settings → **Import backup (JSON)** merges a backup into the library after a confirmation step that shows how many titles will be added, replaced and kept. A confirmation is required because restored titles overwrite current progress and sync to your other devices. The rule is based on watched episodes, not timestamps: a title only in the backup is added, one only in the library is kept, and for a title in both the version with more watched episodes wins (the backup wins ties). An older backup can therefore restore older progress. Restored titles get a fresh update time so cloud sync accepts them despite its last-write-wins protection. Both the current backup format and older backups that contain only `items` are accepted.
 - Settings → **Cloud sync → Password → Change** updates your password after you enter the current one. In email mode, the "Forgot password?" email flow is still available for when you are signed out.
 
 ## Project structure

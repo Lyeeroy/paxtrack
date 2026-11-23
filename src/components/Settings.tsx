@@ -3,10 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { parseBackup } from "@/lib/backup";
 import { notificationsEnabled, notificationsSupported, setNotificationsEnabled } from "@/lib/notify";
-import { createBackup, importBackup } from "@/lib/store";
+import { createBackup, importBackup, planBackupMerge, type MergePlan } from "@/lib/store";
 import { showToast } from "@/lib/toast";
+import type { EpData, Item } from "@/lib/types";
 import CloudSync from "./CloudSync";
 import { IconCopy, IconDownload, IconUpload, ScreenHeader } from "./ui";
+
+interface PendingBackup {
+  items: Item[];
+  eps: EpData[];
+  plan: MergePlan;
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -20,6 +27,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function Settings() {
   const [notif, setNotif] = useState(false);
   const [supported, setSupported] = useState(false);
+  const [pending, setPending] = useState<PendingBackup | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -71,20 +79,29 @@ export default function Settings() {
     if (!file) return;
     try {
       const { items, eps } = parseBackup(await file.text());
-      const { applied, eps: episodeLists, total } = await importBackup(items, eps);
-      const restored = [
-        applied ? `${applied} title${applied === 1 ? "" : "s"}` : null,
-        episodeLists ? `${episodeLists} episode list${episodeLists === 1 ? "" : "s"}` : null,
-      ].filter(Boolean);
-      showToast(
-        restored.length
-          ? `Restored ${restored.join(" and ")}`
-          : total
-            ? "Backup is older than your library — nothing restored"
-            : "Backup has no titles",
-      );
+      if (!items.length) {
+        showToast("Backup has no titles");
+        return;
+      }
+      setPending({ items, eps, plan: planBackupMerge(items) });
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Couldn't read that backup");
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!pending) return;
+    try {
+      const { added, replaced, eps } = await importBackup(pending.items, pending.eps);
+      const restored = [
+        added ? `${added} added` : null,
+        replaced ? `${replaced} replaced` : null,
+        eps ? `${eps} episode list${eps === 1 ? "" : "s"}` : null,
+      ].filter(Boolean);
+      showToast(restored.length ? `Restored: ${restored.join(", ")}` : "Nothing to restore");
+      setPending(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Couldn't restore that backup");
     }
   };
 
@@ -146,6 +163,30 @@ export default function Settings() {
           <IconUpload className="h-5 w-5 shrink-0 text-dim" />
         </button>
         <input ref={fileRef} type="file" accept="application/json,.json" onChange={(e) => void importData(e)} className="hidden" aria-label="Choose a backup JSON file" />
+        {pending ? (
+          <div role="group" aria-label="Confirm backup restore" className="px-4 py-3.5">
+            <p className="text-[15px]">Restore this backup?</p>
+            <p className="mt-1 text-xs leading-relaxed text-dim">
+              {pending.plan.add} new · {pending.plan.replace} replaced · {pending.plan.keep} kept. The version with more watched episodes wins; ties go to the backup. Restored titles will sync to your other devices.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPending(null)}
+                className="h-10 flex-1 rounded-full border border-line text-sm text-dim active:bg-raised"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmImport()}
+                className="h-10 flex-1 rounded-full bg-fg text-sm font-medium text-black active:opacity-80"
+              >
+                Restore
+              </button>
+            </div>
+          </div>
+        ) : null}
       </Section>
 
       <Section title="Gestures">
