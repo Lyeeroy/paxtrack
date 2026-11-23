@@ -71,12 +71,18 @@ export default function Settings() {
     if (!file) return;
     try {
       const { items, eps } = parseBackup(await file.text());
-      const { applied, eps: episodeLists } = await importBackup(items, eps);
+      const { applied, eps: episodeLists, total } = await importBackup(items, eps);
       const restored = [
         applied ? `${applied} title${applied === 1 ? "" : "s"}` : null,
         episodeLists ? `${episodeLists} episode list${episodeLists === 1 ? "" : "s"}` : null,
       ].filter(Boolean);
-      showToast(restored.length ? `Restored ${restored.join(" and ")}` : "Nothing new to restore");
+      showToast(
+        restored.length
+          ? `Restored ${restored.join(" and ")}`
+          : total
+            ? "Backup is older than your library — nothing restored"
+            : "Backup has no titles",
+      );
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Couldn't read that backup");
     }

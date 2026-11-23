@@ -151,27 +151,30 @@ export function createBackup(): Backup {
 }
 
 /**
- * Merge a backup into the local library using the same last-write-wins rule as
- * cloud sync: an imported title only replaces the local copy when its
- * `updatedAt` is newer. Episode lists are only filled in where missing — the
- * local/TMDB-refreshed data is left untouched. Returns what actually changed.
+ * Merge a backup into the local library. A title is restored unless the local
+ * copy is strictly newer (so newer progress is never overwritten), which also
+ * means re-importing a backup with matching timestamps applies cleanly.
+ * Episode lists are only filled in where missing — the local/TMDB-refreshed
+ * data is left untouched. Returns what actually changed.
  */
-export async function importBackup(incomingItems: Item[], incomingEps: EpData[]): Promise<{ applied: number; eps: number }> {
+export async function importBackup(incomingItems: Item[], incomingEps: EpData[]): Promise<{ applied: number; eps: number; total: number }> {
   const changed: Item[] = [];
   for (const item of incomingItems) {
     if (item.deleted || item.preview) continue;
     const local = items.get(item.id);
-    if (!local || item.updatedAt > local.updatedAt) changed.push(item);
+    if (!local || item.updatedAt >= local.updatedAt) changed.push(item);
   }
   let applied = 0;
 
   if (changed.length) {
     // Persist before touching memory, like applyRemote, so a failed write does
     // not leave the in-memory library claiming data that was never stored.
-    await idbPutIfNewer("items", changed);
+    // Equal timestamps are allowed here (unlike a cloud pull) because a restore
+    // must reapply a backup that matches the current library.
+    await idbPutIfNewer("items", changed, true);
     for (const item of changed) {
       const local = items.get(item.id);
-      if (!local || item.updatedAt > local.updatedAt) {
+      if (!local || item.updatedAt >= local.updatedAt) {
         items.set(item.id, item);
         applied++;
       }
@@ -190,7 +193,7 @@ export async function importBackup(incomingItems: Item[], incomingEps: EpData[])
     emit();
   }
 
-  return { applied, eps: newEps.length };
+  return { applied, eps: newEps.length, total: incomingItems.length };
 }
 
 /** Open a search result in the detail view without adding it to the library. */
