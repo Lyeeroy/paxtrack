@@ -146,7 +146,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-[calc(100dvh+1px)] bg-black">
+    <div className="min-h-dvh bg-black">
       <main
         className="mx-auto min-h-dvh max-w-xl pb-[calc(env(safe-area-inset-bottom)+96px)]"
         aria-hidden={!!detail}
