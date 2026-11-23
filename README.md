@@ -64,7 +64,7 @@ In the Supabase dashboard, open **Authentication → URL Configuration**:
 
 The app uses email/password sign-in. Confirmation and password-reset links land on `/auth/callback`, which exchanges the code for a session and then forwards to the app.
 
-Email auth is enabled by default. For quick local development you can turn off **Confirm email** under **Authentication → Providers → Email** so new accounts can sign in immediately. For a real deployment, leave confirmation on and configure your own SMTP provider under **Authentication → Emails → SMTP Settings**; Supabase's built-in email service is rate-limited and not meant for production traffic.
+Email auth is enabled by default. For quick local development you can turn off **Confirm email** under **Authentication → Sign In / Providers → Email** so new accounts can sign in immediately. For a real deployment, leave confirmation on and configure your own SMTP provider under **Authentication → Emails → SMTP Settings**; Supabase's built-in email service is rate-limited and not meant for production traffic.
 
 ## 5. Environment variables
 

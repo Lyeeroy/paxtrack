@@ -23,9 +23,12 @@ function noStore(response: NextResponse) {
 /** Respect the public host when running behind Vercel's proxy. */
 function publicOrigin(request: NextRequest, url: URL) {
   const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  if (!host) return url.origin;
-  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
-  return `${proto}://${host}`;
+  // Only accept a plausible hostname; never trust a raw header value as the
+  // scheme or host of a redirect (these headers are set by the proxy, but on
+  // a self-hosted deployment they may be client-controlled).
+  if (!host || !/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) return url.origin;
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  return `${proto === "http" ? "http" : "https"}://${host}`;
 }
 
 export async function GET(request: NextRequest) {
