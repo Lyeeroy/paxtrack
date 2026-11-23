@@ -1,6 +1,6 @@
 /* Offline-first service worker: app shell + poster cache + background release checks. */
 const VERSION = "v2";
-const SHELL = `shell-${VERSION}`;
+const SHELL = "shell-v3"; // bump when icons change so cached icons are evicted
 const STATIC = `static-${VERSION}`;
 const IMAGES = `images-${VERSION}`;
 
@@ -157,10 +157,10 @@ async function checkReleases() {
     await self.registration.showNotification("New releases", {
       body: `${fresh.length} new episodes are out`,
       tag: "releases",
-      icon: "/icon",
+      icon: "/icon-192.png",
     });
   } else {
-    for (const r of fresh) await self.registration.showNotification(r.title, { body: r.body, tag: r.id, icon: "/icon" });
+    for (const r of fresh) await self.registration.showNotification(r.title, { body: r.body, tag: r.id, icon: "/icon-192.png" });
   }
   fresh.forEach((r) => seen.add(r.id));
   await new Promise((res, rej) => {

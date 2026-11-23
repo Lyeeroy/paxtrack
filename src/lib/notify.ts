@@ -94,12 +94,12 @@ export async function checkNotifications(
       await reg.showNotification("New releases", {
         body: `${fresh.length} new episodes are out`,
         tag: "releases",
-        icon: "/icon",
+        icon: "/icon-192.png",
       });
     } else {
       for (const r of fresh) {
         if (getStoreEpoch() !== startedEpoch) return;
-        await reg.showNotification(r.title, { body: r.body, tag: r.id, icon: "/icon" });
+        await reg.showNotification(r.title, { body: r.body, tag: r.id, icon: "/icon-192.png" });
       }
     }
     if (getStoreEpoch() !== startedEpoch) return;
