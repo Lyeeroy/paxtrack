@@ -97,3 +97,7 @@ create policy "Users can delete their own tracked items"
 -- Belt and braces: signed-out visitors have no access at all.
 revoke all on table public.tracked_items from anon;
 grant select, insert, update, delete on table public.tracked_items to authenticated;
+
+-- PostgREST caches the schema. Force it to see the table immediately so the
+-- app doesn't fail with PGRST205 after this script is run.
+notify pgrst, 'reload schema';

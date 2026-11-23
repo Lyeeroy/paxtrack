@@ -234,6 +234,9 @@ Make sure the current origin is listed under **Authentication → URL Configurat
 **TMDB requests fail**
 Check that `TMDB_API_KEY` is set on the server/Vercel and that the key is a v3 API key.
 
+**"Sync failed: Could not find the table 'public.tracked_items' in the schema cache" (PGRST205)**
+Run [`supabase/schema.sql`](supabase/schema.sql) in the **SQL Editor of the same Supabase project** your `NEXT_PUBLIC_SUPABASE_URL` points to, and make sure it finished without errors. The script ends with a schema-cache reload; if you created the table another way, you can force one yourself by running `notify pgrst, 'reload schema';` in the SQL Editor, then retry **Settings → Cloud sync → Sync now**.
+
 **"Sync failed" or "new row violates row-level security policy"**
 Make sure `supabase/schema.sql` ran without errors, the Supabase variables point to the same project, and you are signed in. Sign out and back in if the session is stale.
 
