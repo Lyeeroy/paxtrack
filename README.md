@@ -235,7 +235,19 @@ Make sure the current origin is listed under **Authentication → URL Configurat
 Check that `TMDB_API_KEY` is set on the server/Vercel and that the key is a v3 API key.
 
 **"Sync failed: Could not find the table 'public.tracked_items' in the schema cache" (PGRST205)**
-Run [`supabase/schema.sql`](supabase/schema.sql) in the **SQL Editor of the same Supabase project** your `NEXT_PUBLIC_SUPABASE_URL` points to, and make sure it finished without errors. The script ends with a schema-cache reload; if you created the table another way, you can force one yourself by running `notify pgrst, 'reload schema';` in the SQL Editor, then retry **Settings → Cloud sync → Sync now**.
+
+1. In the Supabase dashboard, select the project whose ref matches your `NEXT_PUBLIC_SUPABASE_URL` (the part before `.supabase.co`).
+2. Open **SQL Editor → New query**, paste the entire contents of [`supabase/schema.sql`](supabase/schema.sql), and click **Run**. Make sure it finishes without errors.
+3. Check that the table exists by running `select * from public.tracked_items limit 1;` — it should return no rows and no error.
+4. Back in the app, open **Settings → Cloud sync → Sync now**.
+
+If the table already existed but the error persists, the PostgREST schema cache is stale. Run this in the SQL Editor, then retry sync:
+
+```sql
+notify pgrst, 'reload schema';
+```
+
+The setup script ends with that same reload, so re-running it also refreshes the cache. A common cause is running the script against a local CLI project or a different Supabase project than the one in your Vercel environment variables.
 
 **"Sync failed" or "new row violates row-level security policy"**
 Make sure `supabase/schema.sql` ran without errors, the Supabase variables point to the same project, and you are signed in. Sign out and back in if the session is stale.
