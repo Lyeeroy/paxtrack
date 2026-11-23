@@ -21,8 +21,10 @@ export default function Search({ items, onOpen }: { items: Item[]; onOpen: (id: 
     const key = q.trim();
     const hit = cache.get(key);
     if (hit) {
+      /* eslint-disable react-hooks/set-state-in-effect -- show cached results without a loading flash */
       setResults(hit);
       setState("idle");
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
     const id = ++seq.current;

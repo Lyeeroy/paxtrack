@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { idbGetAll, idbPut, idbPutMany } from "./idb";
+import { idbClear, idbFlush, idbGetAll, idbPut, idbPutIfNewer } from "./idb";
 import { flatEps, statsFor } from "./episodes";
 import type { EpData, Item, SearchResult, Status, TitlePayload } from "./types";
 
@@ -15,6 +15,9 @@ let snap: Snapshot = { items: [], eps: {}, ready: false };
 const listeners = new Set<() => void>();
 const changeListeners = new Set<() => void>();
 let initP: Promise<void> | null = null;
+// Bumped whenever the on-device library is replaced (account switch). Async
+// work that started before the switch must not write into the new library.
+let epoch = 0;
 
 function emit() {
   snap = { items: [...items.values()].filter((i) => !i.deleted && !i.preview), eps: epsObj, ready: snap.ready };
@@ -80,25 +83,52 @@ function commit(item: Item, touch = true) {
   if (touch && !next.preview) changeListeners.forEach((l) => l());
 }
 
+/**
+ * Wipe the on-device cache. Used when a different account signs in on this
+ * browser so one user's library can never be uploaded to another account.
+ */
+export async function resetLocalData() {
+  epoch += 1;
+  await idbFlush();
+  await Promise.all([idbClear("items"), idbClear("eps"), idbClear("kv")]);
+  items.clear();
+  epsObj = {};
+  snap = { items: [], eps: {}, ready: true };
+  listeners.forEach((l) => l());
+}
+
+/** Increments when the local library is replaced; stale async work must stop. */
+export function getStoreEpoch() {
+  return epoch;
+}
+
 export function getItem(id: string) {
   return items.get(id);
 }
 
 /** Apply items pulled from the cloud (last-write-wins). Returns true if anything changed. */
-export function applyRemote(remote: Item[]): boolean {
+export async function applyRemote(remote: Item[]): Promise<boolean> {
   const changed: Item[] = [];
   for (const r of remote) {
     const l = items.get(r.id);
+    if (!l || r.updatedAt > l.updatedAt) changed.push(r);
+  }
+  if (!changed.length) return false;
+
+  // Persist before advancing the sync cursor. If IndexedDB rejects, the sync
+  // fails and retries instead of silently losing the pulled rows on reload.
+  await idbPutIfNewer("items", changed);
+
+  let applied = false;
+  for (const r of changed) {
+    const l = items.get(r.id);
     if (!l || r.updatedAt > l.updatedAt) {
       items.set(r.id, r);
-      changed.push(r);
+      applied = true;
     }
   }
-  if (changed.length) {
-    idbPutMany("items", changed).catch(() => {});
-    emit();
-  }
-  return changed.length > 0;
+  if (applied) emit();
+  return applied;
 }
 
 export function allItemsRaw(): Item[] {

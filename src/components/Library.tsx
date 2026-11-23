@@ -90,6 +90,8 @@ export default function Library({
 }) {
   const [filter, setFilterState] = useState<Status>(lastFilter);
   const setFilter = (f: Status) => {
+    // Remember the last filter across tab switches.
+    // eslint-disable-next-line react-hooks/globals
     lastFilter = f;
     setFilterState(f);
   };
@@ -100,6 +102,7 @@ export default function Library({
     return c;
   }, [items]);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const list = useMemo(() => {
     return items
       .filter((i) => i.status === filter)

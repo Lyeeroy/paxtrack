@@ -1,5 +1,6 @@
 import { addDays, flatEps, todayStr } from "./episodes";
 import { kvGet, kvSet } from "./idb";
+import { getStoreEpoch } from "./store";
 import type { EpData, Item } from "./types";
 
 const K = "tracker:notif";
@@ -35,8 +36,8 @@ export async function setNotificationsEnabled(on: boolean): Promise<boolean> {
 export async function registerPeriodic() {
   try {
     const reg = await navigator.serviceWorker.ready;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ps = (reg as any).periodicSync;
+    const ps = (reg as { periodicSync?: { register: (tag: string, options: { minInterval: number }) => Promise<void> } })
+      .periodicSync;
     if (ps) await ps.register("check-releases", { minInterval: 12 * 3600_000 });
   } catch {
     /* unsupported or denied */
@@ -75,13 +76,20 @@ export function dueReleases(items: Item[], eps: Record<string, EpData>): Release
   return out;
 }
 
-export async function checkNotifications(items: Item[], eps: Record<string, EpData>) {
+export async function checkNotifications(
+  items: Item[],
+  eps: Record<string, EpData>,
+  expectedEpoch = getStoreEpoch(),
+) {
   if (!notificationsEnabled()) return;
+  const startedEpoch = expectedEpoch;
+  if (getStoreEpoch() !== startedEpoch) return;
   try {
     const seen = new Set((await kvGet<string[]>("notified")) ?? []);
     const fresh = dueReleases(items, eps).filter((r) => !seen.has(r.id));
     if (!fresh.length) return;
     const reg = await navigator.serviceWorker.ready;
+    if (getStoreEpoch() !== startedEpoch) return;
     if (fresh.length > 3) {
       await reg.showNotification("New releases", {
         body: `${fresh.length} new episodes are out`,
@@ -90,9 +98,11 @@ export async function checkNotifications(items: Item[], eps: Record<string, EpDa
       });
     } else {
       for (const r of fresh) {
+        if (getStoreEpoch() !== startedEpoch) return;
         await reg.showNotification(r.title, { body: r.body, tag: r.id, icon: "/icon" });
       }
     }
+    if (getStoreEpoch() !== startedEpoch) return;
     fresh.forEach((r) => seen.add(r.id));
     await kvSet("notified", [...seen].slice(-600));
   } catch {

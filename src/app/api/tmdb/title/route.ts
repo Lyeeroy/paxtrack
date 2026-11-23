@@ -2,7 +2,6 @@ import { tmdb } from "@/lib/tmdb-server";
 
 export const dynamic = "force-dynamic";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const type = sp.get("type");

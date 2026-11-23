@@ -18,8 +18,10 @@ export default function Upcoming({ items, eps, onOpen }: { items: Item[]; eps: R
   const [notif, setNotif] = useState(false);
   const [supported, setSupported] = useState(false);
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- notification APIs only exist in the browser */
     setNotif(notificationsEnabled());
     setSupported(notificationsSupported());
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const { fresh, soon } = useMemo(() => {

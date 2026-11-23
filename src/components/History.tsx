@@ -56,13 +56,15 @@ export default function History({ items, eps, onOpen }: { items: Item[]; eps: Re
         count: 1,
       });
     }
+    // The weekly count is intentionally computed when this view renders; it
+    // remounts when the user switches tabs.
+    // eslint-disable-next-line react-hooks/purity
     const weekAgo = Date.now() - 7 * 86400000;
     return { entries: out, total: raw.length, week: raw.filter((r) => r.ts > weekAgo).length };
   }, [items, eps]);
 
   const today = todayStr();
   const shown = entries.slice(0, limit);
-  let lastDay = "";
 
   return (
     <div>
@@ -71,8 +73,7 @@ export default function History({ items, eps, onOpen }: { items: Item[]; eps: Re
       <ul>
         {shown.map((e, i) => {
           const day = dayOf(e.ts);
-          const header = day !== lastDay;
-          lastDay = day;
+          const header = i === 0 || day !== dayOf(shown[i - 1].ts);
           return (
             <li key={e.id + e.ts + i} className="cv">
               {header ? (

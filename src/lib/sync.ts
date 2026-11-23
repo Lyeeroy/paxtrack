@@ -1,21 +1,38 @@
 import { useSyncExternalStore } from "react";
-import { allItemsRaw, applyRemote, onLocalChange } from "./store";
+import { getCurrentUser, onAuthChange } from "./auth";
+import { refreshStale } from "./refresh";
+import { allItemsRaw, applyRemote, onLocalChange, resetLocalData } from "./store";
+import { getSupabase, isSupabaseConfigured } from "./supabase/client";
 import type { Item } from "./types";
 
-const K_KEY = "tracker:key";
-const K_LAST = "tracker:last"; // server time of last pull
-const K_PUSHED = "tracker:pushed"; // client time of last push
-const K_TIME = "tracker:synced-at";
+const PUSH_BATCH = 500;
+const PULL_PAGE = 500;
+// Server timestamps are microseconds. Re-read a few seconds on every pull so
+// rows written in the same clock tick can never be skipped.
+const PULL_OVERLAP_US = 5_000_000;
+
+const OWNER_KEY = "tracker:owner";
+const PUSHED_PREFIX = "tracker:pushed:";
+const SINCE_PREFIX = "tracker:since:";
+const AT_PREFIX = "tracker:synced-at:";
+
+export type SyncStatus = "idle" | "syncing" | "error" | "offline" | "signed-out" | "unconfigured";
 
 export interface SyncState {
-  status: "idle" | "syncing" | "error" | "offline";
+  status: SyncStatus;
   at: number;
+}
+
+interface TrackedRow {
+  data: Item;
+  server_ts: number;
 }
 
 let state: SyncState = { status: "idle", at: 0 };
 const listeners = new Set<() => void>();
-function setState(s: Partial<SyncState>) {
-  state = { ...state, ...s };
+
+function setState(patch: Partial<SyncState>) {
+  state = { ...state, ...patch };
   listeners.forEach((l) => l());
 }
 
@@ -30,41 +47,142 @@ export function useSyncState(): SyncState {
   );
 }
 
-export function getSyncKey(): string | null {
+/**
+ * A browser can only hold one account's cache at a time. The first account to
+ * sign in adopts any existing local library; a different account clears it
+ * before pulling its own data.
+ */
+async function claimLocalData(userId: string) {
+  const owner = localStorage.getItem(OWNER_KEY);
+  if (owner === userId) {
+    // If the IndexedDB cache was cleared outside the app but the localStorage
+    // cursor survived, force a full pull instead of resuming from the cursor.
+    const since = Number(localStorage.getItem(SINCE_PREFIX + userId) ?? 0);
+    if (allItemsRaw().length === 0 && Number.isFinite(since) && since > 0) {
+      localStorage.removeItem(PUSHED_PREFIX + userId);
+      localStorage.removeItem(SINCE_PREFIX + userId);
+    }
+    return;
+  }
+
+  if (owner) {
+    await resetLocalData();
+    localStorage.removeItem(PUSHED_PREFIX + userId);
+    localStorage.removeItem(SINCE_PREFIX + userId);
+    localStorage.removeItem(AT_PREFIX + userId);
+  } else {
+    // First sign-in on this browser: adopt the local library and do a full sync.
+    localStorage.removeItem(PUSHED_PREFIX + userId);
+    localStorage.removeItem(SINCE_PREFIX + userId);
+    localStorage.removeItem(AT_PREFIX + userId);
+  }
+
+  localStorage.setItem(OWNER_KEY, userId);
+}
+
+async function runOnce() {
+  if (!isSupabaseConfigured) {
+    setState({ status: "unconfigured" });
+    return;
+  }
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    setState({ status: "offline" });
+    return;
+  }
+
   try {
-    return localStorage.getItem(K_KEY);
-  } catch {
-    return null;
+    const user = await getCurrentUser();
+    if (!user) {
+      setState({ status: "signed-out", at: 0 });
+      return;
+    }
+
+    setState({ status: "syncing" });
+    await claimLocalData(user.id);
+
+    const pushedKey = PUSHED_PREFIX + user.id;
+    const sinceKey = SINCE_PREFIX + user.id;
+    const atKey = AT_PREFIX + user.id;
+    const pushedRaw = Number(localStorage.getItem(pushedKey) ?? 0);
+    const sinceRaw = Number(localStorage.getItem(sinceKey) ?? 0);
+    const pushed = Number.isFinite(pushedRaw) ? pushedRaw : 0;
+    const since = Number.isFinite(sinceRaw) ? sinceRaw : 0;
+
+    // Pull first so last-write-wins can resolve local/remote conflicts before
+    // anything is uploaded. Pushing first could overwrite a newer cloud copy
+    // with stale local data.
+    let pageCursor = Math.max(0, since - PULL_OVERLAP_US);
+    let cursor = since;
+    const remote = new Map<string, Item>();
+
+    for (;;) {
+      const { data, error } = await getSupabase()
+        .from("tracked_items")
+        .select("data, server_ts")
+        .eq("user_id", user.id)
+        .gt("server_ts", pageCursor)
+        .order("server_ts", { ascending: true })
+        .limit(PULL_PAGE);
+      if (error) throw error;
+
+      const rows = (data ?? []) as TrackedRow[];
+      if (!rows.length) break;
+
+      for (const row of rows) {
+        const ts = Number(row.server_ts);
+        if (Number.isFinite(ts)) {
+          pageCursor = Math.max(pageCursor, ts);
+          cursor = Math.max(cursor, ts);
+        }
+        if (row.data && typeof row.data.id === "string") remote.set(row.data.id, row.data);
+      }
+      if (rows.length < PULL_PAGE) break;
+    }
+
+    // The account may have changed while the request was in flight. Never
+    // apply one user's rows after another user has signed in.
+    const current = await getCurrentUser();
+    if (current?.id !== user.id) return;
+
+    if (remote.size) {
+      if (await applyRemote([...remote.values()])) void refreshStale();
+    }
+    localStorage.setItem(sinceKey, String(cursor));
+
+    // Upload only local items that are new or newer than the cloud copy we
+    // just read. Pulled cloud rows are already up to date and stay untouched.
+    const outgoing = allItemsRaw().filter((i) => {
+      if (i.updatedAt <= pushed) return false;
+      const cloud = remote.get(i.id);
+      return !cloud || i.updatedAt > cloud.updatedAt;
+    });
+    // Any edit made while the upload is in flight must be picked up by the
+    // next sync, so record a cursor just before the upload starts.
+    const pushStarted = Date.now();
+    if (outgoing.length) {
+      const rows = outgoing.map((i) => ({
+        user_id: user.id,
+        item_id: i.id,
+        data: i,
+        updated_at: i.updatedAt,
+        deleted: !!i.deleted,
+      }));
+      for (let i = 0; i < rows.length; i += PUSH_BATCH) {
+        const { error } = await getSupabase()
+          .from("tracked_items")
+          .upsert(rows.slice(i, i + PUSH_BATCH), { onConflict: "user_id,item_id" });
+        if (error) throw error;
+      }
+      localStorage.setItem(pushedKey, String(Math.max(0, pushStarted - 1)));
+    }
+
+    const at = Date.now();
+    localStorage.setItem(atKey, String(at));
+    setState({ status: "idle", at });
+  } catch (e) {
+    console.error("sync failed", e);
+    setState({ status: typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error" });
   }
-}
-
-export function normalizeKey(k: string) {
-  return k.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-}
-
-export function formatKey(k: string) {
-  return k.match(/.{1,4}/g)?.join("-") ?? k;
-}
-
-export function ensureSyncKey(): string {
-  let k = getSyncKey();
-  if (!k) {
-    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    const bytes = crypto.getRandomValues(new Uint8Array(20));
-    k = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
-    localStorage.setItem(K_KEY, k);
-  }
-  return k;
-}
-
-/** Link this device to an existing vault. Everything local is pushed and everything remote pulled. */
-export function linkKey(raw: string): boolean {
-  const k = normalizeKey(raw);
-  if (k.length < 16) return false;
-  localStorage.setItem(K_KEY, k);
-  localStorage.setItem(K_LAST, "0");
-  localStorage.setItem(K_PUSHED, "0");
-  return true;
 }
 
 let running: Promise<void> | null = null;
@@ -88,44 +206,25 @@ export function syncNow(): Promise<void> {
   return running;
 }
 
-async function runOnce() {
-  const key = getSyncKey();
-  if (!key) return;
-  if (!navigator.onLine) {
-    setState({ status: "offline" });
-    return;
-  }
-  setState({ status: "syncing" });
-  try {
-    const started = Date.now();
-    const pushed = Number(localStorage.getItem(K_PUSHED) ?? 0);
-    const since = Number(localStorage.getItem(K_LAST) ?? 0);
-    const outgoing = allItemsRaw().filter((i) => i.updatedAt > pushed);
-    const res = await fetch("/api/sync", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key, since, items: outgoing }),
-    });
-    if (!res.ok) throw new Error(String(res.status));
-    const data = (await res.json()) as { items: Item[]; serverTime: number };
-    applyRemote(data.items);
-    localStorage.setItem(K_PUSHED, String(started));
-    localStorage.setItem(K_LAST, String(data.serverTime));
-    const at = Date.now();
-    localStorage.setItem(K_TIME, String(at));
-    setState({ status: "idle", at });
-  } catch {
-    setState({ status: navigator.onLine ? "error" : "offline" });
+/** Remove keys from the old custom sync-key backend. */
+function migrateLegacyKeys() {
+  for (const key of ["tracker:key", "tracker:last", "tracker:pushed", "tracker:synced-at"]) {
+    localStorage.removeItem(key);
   }
 }
 
 let started = false;
-/** Wire up automatic syncing: on change (debounced), on reconnect, on foreground. */
+/** Wire up automatic syncing: on auth change, local change, reconnect and foreground. */
 export function startAutoSync() {
   if (started) return;
   started = true;
-  const at = Number(localStorage.getItem(K_TIME) ?? 0);
-  if (at) setState({ at });
+  migrateLegacyKeys();
+
+  onAuthChange(() => {
+    setState({ at: 0 });
+    void syncNow();
+  });
+
   let t: ReturnType<typeof setTimeout> | undefined;
   onLocalChange(() => {
     clearTimeout(t);
@@ -135,6 +234,6 @@ export function startAutoSync() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void syncNow();
   });
-  ensureSyncKey();
+
   void syncNow();
 }

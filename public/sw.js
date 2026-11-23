@@ -1,5 +1,5 @@
 /* Offline-first service worker: app shell + poster cache + background release checks. */
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = `shell-${VERSION}`;
 const STATIC = `static-${VERSION}`;
 const IMAGES = `images-${VERSION}`;
@@ -74,7 +74,7 @@ self.addEventListener("fetch", (e) => {
       (async () => {
         try {
           const res = await fetch(req);
-          if (res.ok) (await caches.open(SHELL)).put("/", res.clone());
+          if (res.ok && url.pathname === "/") (await caches.open(SHELL)).put("/", res.clone());
           return res;
         } catch {
           return (await caches.match("/")) || Response.error();

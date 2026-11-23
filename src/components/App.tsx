@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { initAuth } from "@/lib/auth";
 import { checkNotifications, notificationsEnabled, registerPeriodic } from "@/lib/notify";
 import { refreshStale } from "@/lib/refresh";
-import { discardPreview, getSnapshot, initStore, useStore } from "@/lib/store";
+import { discardPreview, getSnapshot, getStoreEpoch, initStore, useStore } from "@/lib/store";
 import { startAutoSync } from "@/lib/sync";
 import { dismissToast, useToast } from "@/lib/toast";
 import type { Item } from "@/lib/types";
@@ -67,12 +68,14 @@ export default function App() {
     const run = async () => {
       await refreshStale();
       if (!alive) return;
+      const epoch = getStoreEpoch();
       const s = getSnapshot();
-      void checkNotifications(s.items, s.eps);
+      void checkNotifications(s.items, s.eps, epoch);
     };
     initStore().then(() => {
       if (!alive) return;
       startAutoSync();
+      void initAuth();
       void run();
       if (notificationsEnabled()) void registerPeriodic();
     });
@@ -117,6 +120,9 @@ export default function App() {
 
   const detail = detailId ? items.find((i) => i.id === detailId) ?? (previewItem?.id === detailId ? previewItem : undefined) : undefined;
   useEffect(() => {
+    // A detail view must close when its item disappears (for example, when it
+    // was deleted on another device).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (detailId && ready && !detail) close();
   }, [detailId, detail, ready, close]);
 
