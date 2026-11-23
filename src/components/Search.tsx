@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { refreshItem } from "@/lib/refresh";
 import { addItem, createPreview } from "@/lib/store";
 import { haptic, showToast } from "@/lib/toast";
@@ -10,7 +10,15 @@ import { Empty, IconCheck, IconSearch, Poster, ScreenHeader, TypeTag } from "./u
 const cache = new Map<string, SearchResult[]>();
 let lastQuery = "";
 
-export default function Search({ items, onOpen }: { items: Item[]; onOpen: (id: string, preview?: Item) => void }) {
+export default function Search({
+  items,
+  onOpen,
+  inputRef,
+}: {
+  items: Item[];
+  onOpen: (id: string, preview?: Item) => void;
+  inputRef: RefObject<HTMLInputElement | null>;
+}) {
   const [q, setQ] = useState(lastQuery);
   const [results, setResults] = useState<SearchResult[]>(cache.get(lastQuery.trim()) ?? []);
   const [state, setState] = useState<"idle" | "loading" | "error" | "offline">("idle");
@@ -73,6 +81,7 @@ export default function Search({ items, onOpen }: { items: Item[]; onOpen: (id: 
         <label className="flex h-11 items-center gap-2 rounded-xl bg-surface px-3 text-dim focus-within:ring-1 focus-within:ring-accent/60">
           <IconSearch className="h-5 w-5 shrink-0" />
           <input
+            ref={inputRef}
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}

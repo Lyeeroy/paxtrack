@@ -61,6 +61,7 @@ export default function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
   const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
+  const searchInput = useRef<HTMLInputElement | null>(null);
 
   // ---- boot: local DB -> sync -> background refresh -> notifications
   useEffect(() => {
@@ -133,6 +134,17 @@ export default function App() {
     if (n) setTab(n.id);
   };
 
+  // Re-tapping the active Search tab jumps to the input and opens the keyboard.
+  // Focus must happen inside the click handler so mobile treats it as a user gesture.
+  const selectTab = (id: Tab) => {
+    if (id === "search" && tab === "search") {
+      window.scrollTo(0, 0);
+      searchInput.current?.focus();
+      return;
+    }
+    setTab(id);
+  };
+
   return (
     <div className="min-h-dvh bg-black">
       <main
@@ -159,9 +171,9 @@ export default function App() {
       >
         {!ready ? null : (
           <div key={tab} className="anim-up">
-            {tab === "library" ? <Library items={items} eps={eps} onOpen={open} goSearch={() => setTab("search")} /> : null}
+            {tab === "library" ? <Library items={items} eps={eps} onOpen={open} goSearch={() => selectTab("search")} /> : null}
             {tab === "upcoming" ? <Upcoming items={items} eps={eps} onOpen={open} /> : null}
-            {tab === "search" ? <Search items={items} onOpen={open} /> : null}
+            {tab === "search" ? <Search items={items} onOpen={open} inputRef={searchInput} /> : null}
             {tab === "history" ? <History items={items} eps={eps} onOpen={open} /> : null}
             {tab === "settings" ? <Settings /> : null}
           </div>
@@ -178,7 +190,7 @@ export default function App() {
             return (
               <li key={id}>
                 <button
-                  onClick={() => setTab(id)}
+                  onClick={() => selectTab(id)}
                   aria-current={active ? "page" : undefined}
                   aria-label={label}
                   className={`flex h-11 items-center rounded-full px-3 text-xs font-medium transition-[background-color,color,transform] duration-200 active:scale-95 ${
