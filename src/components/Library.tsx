@@ -114,14 +114,14 @@ export default function Library({
   return (
     <div>
       <ScreenHeader title="Library" sub={`${items.length} ${items.length === 1 ? "title" : "titles"}`} />
-      <div role="tablist" aria-label="Filter by status" className="flex flex-wrap gap-1.5 px-4 pb-3 pt-1">
+      <div role="tablist" aria-label="Filter by status" className="no-scrollbar flex gap-1.5 overflow-x-auto px-4 pb-3 pt-1">
         {FILTERS.map((f) => (
           <button
             key={f.id}
             role="tab"
             aria-selected={filter === f.id}
             onClick={() => setFilter(f.id)}
-            className={`h-9 rounded-full px-3.5 text-[13px] ${
+            className={`h-9 shrink-0 rounded-full px-3.5 text-[13px] ${
               filter === f.id ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"
             }`}
           >
