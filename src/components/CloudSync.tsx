@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { isEmailAuth, normalizeUsername, USERNAME_HINT } from "@/lib/auth-config";
 import {
   describeAuthError,
+  displayName,
   resetPassword,
   signInWithPassword,
   signOut,
@@ -21,7 +23,7 @@ export default function CloudSync() {
   const auth = useAuth();
   const sync = useSyncState();
   const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,9 +56,9 @@ export default function CloudSync() {
     setError(null);
     setMessage(null);
 
-    const address = email.trim();
-    if (!address) {
-      setError("Enter your email address.");
+    const raw = identifier.trim();
+    if (!raw) {
+      setError(isEmailAuth ? "Enter your email address." : "Enter a username.");
       return;
     }
     if (mode !== "reset" && password.length < 8) {
@@ -68,24 +70,34 @@ export default function CloudSync() {
       return;
     }
 
+    const account = isEmailAuth ? raw : normalizeUsername(raw);
+    if (mode !== "reset" && !isEmailAuth && !account) {
+      setError(USERNAME_HINT);
+      return;
+    }
+
     setBusy(true);
     try {
       if (mode === "signin") {
-        await signInWithPassword(address, password);
+        await signInWithPassword(account!, password);
         showToast("Signed in");
         setPassword("");
       } else if (mode === "signup") {
-        const { needsConfirmation } = await signUpWithPassword(address, password);
+        const { needsConfirmation } = await signUpWithPassword(account!, password);
         setPassword("");
         setConfirm("");
         if (needsConfirmation) {
-          setMode("signin");
-          setMessage("Check your email to confirm your account, then sign in.");
+          if (isEmailAuth) {
+            setMode("signin");
+            setMessage("Check your email to confirm your account, then sign in.");
+          } else {
+            setError("Email confirmation is on in Supabase. Turn off Confirm email for username mode, then sign in.");
+          }
         } else {
           showToast("Account created");
         }
       } else {
-        await resetPassword(address);
+        await resetPassword(raw);
         setMessage("Check your email for a password reset link.");
       }
     } catch (err) {
@@ -125,7 +137,7 @@ export default function CloudSync() {
             <div className="flex items-center justify-between gap-3 px-4 py-3.5">
               <div className="min-w-0">
                 <p className="text-[15px]">Signed in</p>
-                <p className="mt-0.5 truncate text-xs text-dim">{auth.user.email ?? "Your account"}</p>
+                <p className="mt-0.5 truncate text-xs text-dim">{displayName(auth.user)}</p>
               </div>
               <button
                 onClick={() => void doSignOut()}
@@ -157,28 +169,33 @@ export default function CloudSync() {
             </p>
             <p className="mt-0.5 text-xs leading-relaxed text-dim">
               {mode === "signup"
-                ? "Back up your library and pick it up on any device."
+                ? isEmailAuth
+                  ? "Back up your library and pick it up on any device."
+                  : "Pick a username and password — no email needed."
                 : mode === "reset"
                   ? "We'll email you a link to choose a new password."
                   : "Your library stays on this device until you sign in. Sign in to back it up and sync across devices."}
             </p>
 
-            <label htmlFor="sync-email" className="mt-3 block text-xs text-dim">
-              Email
+            <label htmlFor="sync-identifier" className="mt-3 block text-xs text-dim">
+              {isEmailAuth ? "Email" : "Username"}
             </label>
             <input
-              id="sync-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-              inputMode="email"
+              id="sync-identifier"
+              type={isEmailAuth ? "email" : "text"}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder={isEmailAuth ? "you@example.com" : "yourname"}
+              autoComplete={isEmailAuth ? "email" : "username"}
+              inputMode={isEmailAuth ? "email" : "text"}
               autoCapitalize="none"
               spellCheck={false}
               required
               className={inputClass}
             />
+            {!isEmailAuth && mode === "signup" ? (
+              <p className="mt-1 text-[11px] leading-relaxed text-faint">{USERNAME_HINT}</p>
+            ) : null}
 
             {mode !== "reset" ? (
               <>
@@ -251,7 +268,7 @@ export default function CloudSync() {
               >
                 {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
               </button>
-              {mode === "signin" ? (
+              {isEmailAuth && mode === "signin" ? (
                 <button type="button" onClick={() => switchMode("reset")} className="shrink-0 text-dim active:opacity-70">
                   Forgot password?
                 </button>
@@ -268,7 +285,9 @@ export default function CloudSync() {
 
       {auth.configured ? (
         <p className="px-2 pt-2 text-[11px] leading-relaxed text-faint">
-          Accounts are handled by Supabase. Your library is protected by row-level security, so only you can read it.
+          {isEmailAuth
+            ? "Accounts and recovery emails are handled by Supabase. Your library is protected by row-level security, so only you can read it."
+            : "Accounts are handled by Supabase. Username mode never sends email; your library is protected by row-level security."}
         </p>
       ) : null}
     </section>

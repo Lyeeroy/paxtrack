@@ -1,6 +1,23 @@
 import { useSyncExternalStore } from "react";
 import type { User } from "@supabase/supabase-js";
+import { isEmailAuth, normalizeUsername, usernameToEmail, USERNAME_HINT } from "./auth-config";
 import { getSupabase, isSupabaseConfigured } from "./supabase/client";
+
+/** The name shown in the UI for a signed-in account. */
+export function displayName(user: User | null): string {
+  if (!user) return "";
+  const username = user.user_metadata?.username;
+  if (typeof username === "string" && username) return username;
+  return user.email?.split("@")[0] ?? "Account";
+}
+
+/** Resolve either a username (default mode) or an email address to a Supabase identifier. */
+function identifierToEmail(identifier: string): string {
+  if (isEmailAuth) return identifier.trim();
+  const username = normalizeUsername(identifier);
+  if (!username) throw new Error(USERNAME_HINT);
+  return usernameToEmail(username);
+}
 
 export interface AuthState {
   /** False until the persisted session has been read. */
@@ -90,23 +107,27 @@ export async function getCurrentUser(): Promise<User | null> {
   return data.session?.user ?? null;
 }
 
-export async function signInWithPassword(email: string, password: string) {
-  const { error } = await getSupabase().auth.signInWithPassword({ email, password });
+export async function signInWithPassword(identifier: string, password: string) {
+  const { error } = await getSupabase().auth.signInWithPassword({
+    email: identifierToEmail(identifier),
+    password,
+  });
   if (error) throw error;
 }
 
-export async function signUpWithPassword(email: string, password: string) {
-  const { data, error } = await getSupabase().auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-  });
+export async function signUpWithPassword(identifier: string, password: string) {
+  const email = identifierToEmail(identifier);
+  const options = isEmailAuth
+    ? { emailRedirectTo: `${window.location.origin}/auth/callback` }
+    : { data: { username: normalizeUsername(identifier) } };
+  const { data, error } = await getSupabase().auth.signUp({ email, password, options });
   if (error) throw error;
   return { needsConfirmation: !data.session };
 }
 
 export async function resetPassword(email: string) {
-  const { error } = await getSupabase().auth.resetPasswordForEmail(email, {
+  if (!isEmailAuth) throw new Error("Password reset is only available in email mode.");
+  const { error } = await getSupabase().auth.resetPasswordForEmail(email.trim(), {
     redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/auth/reset")}`,
   });
   if (error) throw error;
@@ -125,12 +146,15 @@ export async function signOut() {
 /** Turn Supabase's technical errors into something a person can act on. */
 export function describeAuthError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/invalid login credentials/i.test(msg)) return "Wrong email or password.";
-  if (/invalid email|email.*invalid format/i.test(msg)) return "Enter a valid email address.";
+  if (/invalid login credentials/i.test(msg))
+    return isEmailAuth ? "Wrong email or password." : "Wrong username or password.";
+  if (!isEmailAuth && /invalid email|email.*invalid|unable to validate email/i.test(msg)) return USERNAME_HINT;
+  if (isEmailAuth && /invalid email|email.*invalid format/i.test(msg)) return "Enter a valid email address.";
   if (/email not confirmed/i.test(msg)) return "Confirm your email first — check your inbox.";
   if (/auth session missing|session.*(expired|not found)/i.test(msg))
     return "Your session expired. Request a new link and try again.";
-  if (/user already registered/i.test(msg)) return "That email already has an account. Sign in instead.";
+  if (/user already registered/i.test(msg))
+    return isEmailAuth ? "That email already has an account. Sign in instead." : "That username is taken. Sign in instead.";
   if (/password should be at least/i.test(msg)) return "Use at least 8 characters for your password.";
   if (/email rate limit|rate limit exceeded/i.test(msg))
     return "Too many emails sent. Try again later, or configure SMTP in Supabase.";

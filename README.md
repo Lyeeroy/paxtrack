@@ -8,7 +8,7 @@ A small, offline-first episode tracker for anime, TV shows and movies. Your libr
 - Release calendar, watch history and per-title progress
 - Works offline (IndexedDB + service worker) and installs as a PWA
 - Optional release-day notifications
-- Email/password accounts and multi-device sync through Supabase
+- Username/password accounts by default (email mode optional) and multi-device sync through Supabase
 - Row Level Security: the database only ever returns your own library
 - Local-only mode when Supabase is not configured
 - Metadata and artwork from TMDB
@@ -57,18 +57,29 @@ You do **not** need a database password or connection string in the app. The bro
 
 ## 4. Configure authentication
 
-In the Supabase dashboard, open **Authentication → URL Configuration**:
+There are two auth modes. Pick one before you invite users — an account created in one mode signs in with that mode's identifier.
 
-- **Site URL**: `http://localhost:3000` for local development. Change it to your Vercel URL (for example `https://tracker-abc.vercel.app`) when you deploy — Supabase uses this address in auth emails when the app doesn't provide its own redirect.
-- **Redirect URLs**: add `http://localhost:3000/**` for development and `https://<your-vercel-domain>/**` for production (or a preview wildcard such as `https://*-your-team.vercel.app/**`).
+### Username mode (default)
 
-The app uses email/password sign-in. Its sign-up and password-reset calls pass the current site origin as the redirect target, so every origin you sign in from must be in the allowlist. By default, confirmation and password-reset links go through Supabase's `/auth/v1/verify` endpoint and then land on `/auth/callback`, which exchanges the code for a session and forwards to the app.
+Users pick a username (3–20 characters, starting with a letter) and a password. No email is collected, no confirmation is needed, and no email is sent.
 
-If a confirmation email contains `redirect_to=http://localhost:3000`, the Supabase **Site URL** is still set to localhost. Update it as above and request a new confirmation email (or sign up again from the deployed site).
+Supabase Auth always signs in with an email address, so the app derives a private, non-deliverable address from the username (`<username>@users.example.com`) and stores the username in `user_metadata`. Nobody needs to know or receive that address.
 
-Email auth is enabled by default. For quick local development you can turn off **Confirm email** under **Authentication → Sign In / Providers → Email** so new accounts can sign in immediately. For a real deployment, leave confirmation on and configure your own SMTP provider under **Authentication → Emails → SMTP Settings**; Supabase's built-in email service is rate-limited and not meant for production traffic.
+In the Supabase dashboard, open **Authentication → Sign In / Providers → Email** and turn **Confirm email** off. Otherwise Supabase will demand an email confirmation that username mode cannot complete.
 
-### Customize the auth emails (optional)
+Password reset is not available in this mode because there is no email to send a link to; the reset screen says so.
+
+### Email mode (opt-in)
+
+Set `NEXT_PUBLIC_AUTH_MODE=email` in `.env.local` and on Vercel. Users then sign up with a real email address, and Supabase handles confirmation and password-reset emails.
+
+- Leave **Confirm email** on under **Authentication → Sign In / Providers → Email**.
+- Configure SMTP under **Authentication → Emails → SMTP Settings** for production; Supabase's built-in sender is heavily rate-limited.
+- In **Authentication → URL Configuration**, set **Site URL** to your deployed origin and add the matching **Redirect URLs**, for example `https://<your-domain>/**`. Add `http://localhost:3000/**` for local development. The app passes the current origin as the redirect target on sign-up and reset, so every origin you sign in from must be allowlisted.
+
+If a confirmation email contains `redirect_to=http://localhost:3000`, the Site URL is still localhost. Fix it there and request a new email.
+
+### Customize the auth emails (email mode only)
 
 The email content itself is controlled by Supabase, not by this repo. Edit subjects and HTML under **Authentication → Emails → Templates**. To make the link point at your own domain instead of Supabase's verify endpoint, use this in the **Confirm signup** template:
 
@@ -82,7 +93,7 @@ And in the **Reset password** template:
 <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/reset">Choose a new password</a>
 ```
 
-`/auth/confirm` is a route in this app: it verifies the token on the server, writes the session cookie, then redirects to `next`. You can keep the default `{{ .ConfirmationURL }}` links if you prefer — just make sure Site URL and Redirect URLs are correct so they don't point to localhost. The **in-app** sign-in form is React code in `src/components/CloudSync.tsx` if you want to restyle that instead.
+`/auth/confirm` is a route in this app: it verifies the token on the server, writes the session cookie, then redirects to `next`. You can keep the default `{{ .ConfirmationURL }}` links if you prefer — just make sure Site URL and Redirect URLs are correct. The **in-app** sign-in form is React code in `src/components/CloudSync.tsx` if you want to restyle that.
 
 ## 5. Environment variables
 
@@ -94,9 +105,12 @@ cp .env.example .env.local
 
 ```dotenv
 TMDB_API_KEY=your_tmdb_v3_api_key
+NEXT_PUBLIC_AUTH_MODE=username
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```
+
+`NEXT_PUBLIC_AUTH_MODE` is optional: unset means `username`. Set it to `email` to use email/password sign-in with confirmation and reset emails.
 
 Find the Supabase values under **Project Settings → API Keys**:
 
@@ -131,10 +145,11 @@ Without Supabase variables the app still runs in local-only mode: everything wor
 2. In [Vercel](https://vercel.com/new), import the repository. Vercel detects Next.js automatically; no custom build command or `vercel.json` is needed.
 3. Add these environment variables for **Production**, **Preview** and **Development**:
    - `TMDB_API_KEY`
+   - `NEXT_PUBLIC_AUTH_MODE` — omit or set to `username` for the default; use `email` for email/password accounts
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 4. Deploy.
-5. Back in Supabase, update **Authentication → URL Configuration**:
+5. In Supabase, turn **Confirm email** off for username mode (or leave it on for email mode). For email mode also set **Authentication → URL Configuration**:
    - **Site URL**: `https://your-project.vercel.app`
    - **Redirect URLs**: add `https://your-project.vercel.app/**`
 6. If you changed environment variables after deploying, trigger a new deployment so they take effect.
@@ -201,7 +216,13 @@ npm run lint       # ESLint
 **"Cloud sync isn't configured"**
 Add the Supabase variables to `.env.local` (or to Vercel), then restart the dev server or redeploy.
 
-**"Confirm your email first"**
+**"Username must start with a letter" / "That username is taken"**
+Usernames are 3–20 characters: a letter, then letters, numbers or underscores. A taken username means that internal address is already registered — sign in or choose another.
+
+**Sign-up says confirmation is required (username mode)**
+Turn **Confirm email** off under **Authentication → Sign In / Providers → Email** in Supabase. Username mode has no inbox to confirm with. The account was already created, so you can sign in once confirmation is off.
+
+**"Confirm your email first" (email mode)**
 Check your inbox for the confirmation link. For local development you can disable email confirmation in Supabase as described above.
 
 **"Too many emails sent"**

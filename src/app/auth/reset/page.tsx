@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ScreenHeader } from "@/components/ui";
+import { isEmailAuth } from "@/lib/auth-config";
 import { describeAuthError, initAuth, updatePassword, useAuth } from "@/lib/auth";
 import { showToast } from "@/lib/toast";
 
@@ -51,6 +52,14 @@ export default function ResetPassword() {
       ) : !auth.configured ? (
         <div className="px-6 py-12 text-center">
           <p className="text-sm text-dim">Cloud sync isn&apos;t configured for this deployment.</p>
+          <Link href="/" className="mt-6 inline-flex h-11 items-center rounded-full bg-fg px-6 text-sm font-medium text-black">
+            Back to Tracker
+          </Link>
+        </div>
+      ) : !isEmailAuth ? (
+        <div className="px-6 py-12 text-center">
+          <p className="text-sm text-dim">Password reset is only available when email sign-in is enabled.</p>
+          <p className="mt-2 text-xs text-faint">This deployment uses username sign-in, so there is no email to send a reset link to.</p>
           <Link href="/" className="mt-6 inline-flex h-11 items-center rounded-full bg-fg px-6 text-sm font-medium text-black">
             Back to Tracker
           </Link>
