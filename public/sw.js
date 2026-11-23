@@ -1,6 +1,6 @@
 /* Offline-first service worker: app shell + poster cache + background release checks. */
 const VERSION = "v2";
-const SHELL = "shell-v3"; // bump when icons change so cached icons are evicted
+const SHELL = "shell-v4"; // bump when icons change so cached icons are evicted
 const STATIC = `static-${VERSION}`;
 const IMAGES = `images-${VERSION}`;
 
