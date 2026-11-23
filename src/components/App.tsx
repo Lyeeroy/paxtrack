@@ -28,7 +28,7 @@ function Toaster() {
   const t = useToast();
   if (!t) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+72px)] z-50 flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-50 flex justify-center px-4">
       <div
         key={t.id}
         role="status"
@@ -130,7 +130,7 @@ export default function App() {
   return (
     <div className="min-h-dvh bg-black">
       <main
-        className="mx-auto min-h-dvh max-w-xl pb-[calc(env(safe-area-inset-bottom)+80px)]"
+        className="mx-auto min-h-dvh max-w-xl pb-[calc(env(safe-area-inset-bottom)+96px)]"
         aria-hidden={!!detail}
         onPointerDown={(e) => {
           const el = e.target as HTMLElement;
@@ -164,21 +164,34 @@ export default function App() {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-black pb-[env(safe-area-inset-bottom)]"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-2 pb-[calc(env(safe-area-inset-bottom)+10px)]"
       >
-        <ul className="mx-auto flex max-w-xl">
-          {TABS.map(({ id, label, Icon }) => (
-            <li key={id} className="flex-1">
-              <button
-                onClick={() => setTab(id)}
-                aria-current={tab === id ? "page" : undefined}
-                className={`flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[10px] ${tab === id ? "text-accent" : "text-faint active:text-dim"}`}
-              >
-                <Icon className="h-[22px] w-[22px]" />
-                {label}
-              </button>
-            </li>
-          ))}
+        <ul className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-line bg-raised/80 p-1.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl">
+          {TABS.map(({ id, label, Icon }) => {
+            const active = tab === id;
+            return (
+              <li key={id}>
+                <button
+                  onClick={() => setTab(id)}
+                  aria-current={active ? "page" : undefined}
+                  aria-label={label}
+                  className={`flex h-11 items-center rounded-full px-3 text-xs font-medium transition-[background-color,color,transform] duration-200 active:scale-95 ${
+                    active ? "bg-accent/15 text-accent" : "text-faint hover:text-dim"
+                  }`}
+                >
+                  <Icon className="h-[21px] w-[21px] shrink-0" />
+                  <span
+                    aria-hidden
+                    className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-out ${
+                      active ? "ml-1.5 max-w-[64px] opacity-100" : "max-w-0 opacity-0"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </nav>
 
