@@ -1,0 +1,54 @@
+# 05 — Gotchas and traps
+
+Things that are easy to get wrong in this project. Read before touching the related area.
+
+## Next.js 16 (this is not the Next.js from older training data)
+
+The root `AGENTS.md` block is generated and re-added by `next dev`. It points to the version-matched docs at `node_modules/next/dist/docs/` — read the relevant page there before writing code. Highlights from the installed 16.4 docs:
+
+- **`proxy.ts`, not `middleware.ts`.** Middleware was renamed to Proxy in Next.js 16. The project's `src/proxy.ts` exports `proxy()` with a `matcher`. Only one proxy file is allowed per project; split logic into imported modules if it grows. Do not create a `middleware.ts` alongside it.
+- **Async request APIs are mandatory.** `cookies()`, `headers()`, `params`, `searchParams` and `draftMode()` are Promises; the synchronous compatibility from v15 is removed. That's why `src/app/auth/error/page.tsx` declares `searchParams: Promise<…>` and `await`s it, and why `src/lib/supabase/server.ts` does `await cookies()`.
+- **Route handlers are explicitly dynamic.** `src/app/api/**/route.ts` and the auth routes export `export const dynamic = "force-dynamic"`. Keep it — these routes read request URLs and secrets.
+- **Turbopack is the default** for `dev` and `build`. `next.config.ts` uses a top-level `turbopack` key (`experimental.turbopack` is gone) with `root: process.cwd()` so a parent lockfile doesn't break local builds. A custom `webpack` config would make `next build` fail.
+- **`next lint` no longer exists.** The script is `"lint": "eslint ."` with a flat config in `eslint.config.mjs` importing `eslint-config-next/core-web-vitals`.
+- **Node 20.9+ and TypeScript 5+** are the minimum. The project pins Node `>=20.9.0` in `package.json`.
+- `<Link>`/`<Image>` conventions come from the App Router. The one exception is the intentional plain `<img>` for TMDB posters (see `04-conventions.md`).
+
+## Supabase and sync
+
+- **Never put a service-role key anywhere**, especially not in `NEXT_PUBLIC_*`. Both Supabase keys used here are public; RLS is the only security boundary. `SUPABASE_KEY` prefers the publishable key and falls back to the legacy anon key (`src/lib/supabase/config.ts`).
+- **`NEXT_PUBLIC_*` values are baked into the build.** Changing them on Vercel requires a redeploy, not just a save.
+- **RLS failure is a data-visibility bug, not a convenience bug.** If a user can see someone else's row, the schema is wrong. `src/proxy.ts` deliberately does not block pages on refresh failure — worst case is a signed-out user.
+- **Server Components cannot write cookies.** That's why `createClient()`'s `setAll` swallows errors; `src/proxy.ts` is responsible for refreshing session cookies.
+- **PGRST205** ("table not found in schema cache") after running the schema: re-run `supabase/schema.sql` or execute `notify pgrst, 'reload schema';`. Also confirm the project ref matches `NEXT_PUBLIC_SUPABASE_URL` — people often run the script against a local CLI project by mistake.
+- **Stale upserts are silently ignored.** The `tracked_items_lww` trigger drops rows where `new.updated_at <= old.updated_at`. `commit()` compensates with `Math.max(Date.now(), old + 1)`; never bypass it.
+- **Pull before push**, and never advance `tracker:since:<uid>` before IndexedDB has persisted the pulled rows. Reordering either causes data loss, not just a stale UI.
+- **`server_ts` is microseconds, `updatedAt` is milliseconds.** The 5-second overlap (`PULL_OVERLAP_US = 5_000_000`) exists because server rows written in the same clock tick could otherwise be skipped. Don't "simplify" it to zero.
+- **Account switching is hostile to async code.** `resetLocalData()` bumps `epoch`, flushes in-flight IndexedDB writes, then clears. Any new async feature that touches the library must capture `getStoreEpoch()` and abort if it changed (see `04-conventions.md`).
+- **Sync is skipped when offline or unconfigured**, but local edits still persist and are uploaded on the next trigger (`online`, tab visible, auth change, or the 2.5 s local-change debounce).
+
+## Auth
+
+- **Username mode needs "Confirm email" OFF in Supabase.** It derives `<username>@users.example.com` because Supabase Auth always signs in with an email; there is no inbox to confirm with. Turning confirmation on produces a sign-up that can never complete.
+- **Password reset exists only in email mode.** `resetPassword()` throws in username mode; the reset screen explains it. The in-app "Change password" works in both modes because `changePassword()` re-signs in with the current password first (which also satisfies Supabase's reauthentication requirement).
+- **PKCE links are browser-bound.** A confirmation/reset link opened in a different browser than the one that requested it fails because the verifier is stored there. Also make sure every origin you sign in from is in Supabase's Redirect URLs allowlist.
+- **Redirects are sanitized in `src/lib/auth-redirect.ts`.** `safeNext()` allows only same-origin relative paths; `publicOrigin()` validates `x-forwarded-host` with a hostname regex before using it. Don't build redirect URLs from raw request headers.
+
+## PWA, notifications and service worker
+
+- **The service worker is registered only in production** (`NODE_ENV === "production"` in `App.tsx`). Offline behaviour is hard to test in `next dev`; use a production build.
+- **Bump `SHELL` in `public/sw.js` when icons change**, otherwise old cached icons survive. `STATIC`/`IMAGES` are versioned by `VERSION`; the activate handler deletes caches whose names no longer match the keep list.
+- **`public/sw.js` duplicates the release-detection logic from `src/lib/notify.ts`.** It opens IndexedDB itself (it cannot import app modules). Any change to "releases in the last two days", filtering by status, or event ids must be made in both places.
+- **Notification dedupe is persisted**, in the `kv` store under `notified`, capped at 600 ids. Clearing site data re-notifies everything.
+- **Periodic Background Sync is Chromium-only.** On iOS, notifications require adding the app to the Home Screen first. The UI disables the switch when the APIs are missing.
+- **TMDB posters are cached by the service worker**, not by the app. The 400-entry trim keeps the cache bounded.
+
+## Product logic traps
+
+- **Watched progress is a map, not a count.** `Item.watched` maps episode key → timestamp. Derive counts with `statsFor()`; don't count keys by hand when "aired" filtering or backlog matters.
+- **A removed title stays in the map as a tombstone** (`deleted: true`, `watched: {}`). Re-opening it from search creates a fresh `preview` (`createPreview()`) so edits are not hidden forever. Tapping a status in a preview is how a removed title is added back. Tapping the *active* status in `Detail.tsx` removes the title but keeps the detail open as an untracked preview (`App.tsx` sets `previewItem` before `removeItem()` so the auto-close effect doesn't fire); `setStatus()` and `setWatched()` therefore also treat a tombstone like a preview and clear `deleted`/`preview`, so a title can be re-added from that screen — even with the same status.
+- **Previews are not persisted** until the first real change promotes them in `commit()`. `discardPreview()` removes unchanged previews when the detail view closes.
+- **Auto-status is intentional.** Watching an episode can move `planned → watching`; finishing can move to `completed`. `withAutoStatus()` and `saveTitle()` encode these rules. Don't overwrite status blindly in new code.
+- **Backup merge is by watched count, not time.** More watched episodes wins; ties go to the backup. Restored items get a fresh `updatedAt` so they can reach the cloud — preserving the backup's old timestamp would make the sync drop them.
+- **Library sorting favours backlog then recent activity** (`Library.tsx`), and the last filter is kept in a module-level `lastFilter` across tab switches. Both are deliberate; don't "fix" them without checking the UI intent.
+- **History batches rapid marks.** Consecutive same-title entries within 90 seconds collapse into one "N episodes" row. The weekly count is computed at render time because the view remounts on tab switches.

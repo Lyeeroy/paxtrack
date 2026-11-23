@@ -326,8 +326,13 @@ export function removeItem(id: string) {
 
 export function setStatus(id: string, status: Status) {
   const item = items.get(id);
-  if (!item || (item.status === status && !item.preview)) return;
-  // Tapping a status in a preview is how a removed title gets added back.
+  if (!item) return;
+  // Tapping a status in a preview or on a removed title adds it back.
+  if (item.preview || item.deleted) {
+    commit({ ...item, deleted: false, preview: undefined, status });
+    return;
+  }
+  if (item.status === status) return;
   commit({ ...item, status });
 }
 
@@ -345,7 +350,8 @@ function setWatched(id: string, fn: (w: Record<string, number>) => void) {
   if (!item) return;
   const watched = { ...item.watched };
   fn(watched);
-  commit(withAutoStatus({ ...item, watched }));
+  // Marking an episode from an untracked detail view adds the title back too.
+  commit(withAutoStatus({ ...item, deleted: false, preview: undefined, watched }));
 }
 
 export function toggleEpisode(id: string, key: string) {

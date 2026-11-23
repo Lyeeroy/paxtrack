@@ -134,12 +134,13 @@ export default function Settings() {
         <div className="flex items-center justify-between gap-3 px-4 py-3.5">
           <span className="text-[15px]">Export backup (JSON)</span>
           <div className="flex shrink-0 items-center gap-1">
+            {/* -my-2 cancels the buttons' vertical padding so this row matches the Import row's height. */}
             <button
               type="button"
               onClick={downloadBackup}
               aria-label="Download backup JSON"
               title="Download JSON"
-              className="rounded-lg p-2 text-dim active:bg-raised"
+              className="-my-2 rounded-lg p-2 text-dim active:bg-raised"
             >
               <IconDownload className="h-5 w-5" />
             </button>
@@ -148,7 +149,7 @@ export default function Settings() {
               onClick={() => void copyBackup()}
               aria-label="Copy backup JSON"
               title="Copy JSON"
-              className="rounded-lg p-2 text-dim active:bg-raised"
+              className="-my-2 rounded-lg p-2 text-dim active:bg-raised"
             >
               <IconCopy className="h-5 w-5" />
             </button>

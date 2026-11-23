@@ -58,7 +58,17 @@ const EpRow = memo(function EpRow({ id, ep, watched, aired }: { id: string; ep: 
   );
 });
 
-export default function Detail({ item, data, onClose }: { item: Item; data: EpData | undefined; onClose: () => void }) {
+export default function Detail({
+  item,
+  data,
+  onClose,
+  onUntrack,
+}: {
+  item: Item;
+  data: EpData | undefined;
+  onClose: () => void;
+  onUntrack: (item: Item) => void;
+}) {
   const [season, setSeasonSel] = useState<number | null>(null);
   const [confirm, setConfirm] = useState(false);
   const edge = useRef<{ x: number; y: number } | null>(null);
@@ -128,17 +138,20 @@ export default function Detail({ item, data, onClose }: { item: Item; data: EpDa
         </div>
 
         <div role="radiogroup" aria-label="Status" className="mt-5 grid grid-cols-4 gap-1 px-4">
-          {STATUSES.map((s) => (
-            <button
-              key={s.id}
-              role="radio"
-              aria-checked={item.status === s.id}
-              onClick={() => setStatus(item.id, s.id)}
-              className={`h-10 rounded-lg text-[13px] ${item.status === s.id ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"}`}
-            >
-              {s.label}
-            </button>
-          ))}
+          {STATUSES.map((s) => {
+            const active = !item.preview && item.status === s.id;
+            return (
+              <button
+                key={s.id}
+                role="radio"
+                aria-checked={active}
+                onClick={() => (active ? onUntrack(item) : setStatus(item.id, s.id))}
+                className={`h-10 rounded-lg text-[13px] ${active ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"}`}
+              >
+                {s.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="px-4 pt-3">

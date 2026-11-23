@@ -68,12 +68,13 @@ If the code contradicts a doc, the code is right and the doc is stale — fix th
 
 ## Index
 
-> Only the files marked **existing** are present. The rest are planned slots — create them when the need arises, then flip them to **existing** and add a one-line description.
+Read in order. Each file links back here and to its siblings.
 
-- `README.md` — **existing** — this file. Read first; explains the docs system.
-- `01-project-overview.md` — planned — what the app is, the stack, and the high-level shape.
-- `02-architecture.md` — planned — modules and data flow (IndexedDB cache, sync engine, Supabase, TMDB routes).
-- `03-data-model.md` — planned — core types, storage schema, and last-write-wins sync semantics.
-- `04-conventions.md` — planned — coding patterns, naming, and "how we do things here".
-- `05-gotchas.md` — planned — known traps, Next.js 16 breaking changes, Supabase config pitfalls.
-- `decisions/` — planned — dated architecture decision records (ADRs).
+- [README.md](./README.md) — **start here** — this file; how the docs system works and how to read/write it.
+- [01-project-overview.md](./01-project-overview.md) — what the app is, the pinned stack, the file map, boot sequence and config surface.
+- [02-architecture.md](./02-architecture.md) — module layering and data flow: store, sync engine, auth, TMDB routes, notifications, service worker, backups.
+- [03-data-model.md](./03-data-model.md) — every stored field, IndexedDB store, localStorage cursor and Supabase column.
+- [04-conventions.md](./04-conventions.md) — coding patterns, naming, UI/accessibility rules and verification commands.
+- [05-gotchas.md](./05-gotchas.md) — traps: Next.js 16 changes, Supabase/LWW pitfalls, auth modes, PWA quirks, product logic.
+- [06-ui-design.md](./06-ui-design.md) — UI **and UX**: phone-first, gestures and instant navigation as goal one, plus palette, type, layout, motion and accessibility. **Read before changing any UI or interaction.**
+- [decisions/](./decisions/README.md) — dated architecture decision records with the *why* behind the design.

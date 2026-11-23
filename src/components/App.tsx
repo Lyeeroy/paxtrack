@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { initAuth } from "@/lib/auth";
 import { checkNotifications, notificationsEnabled, registerPeriodic } from "@/lib/notify";
 import { refreshStale } from "@/lib/refresh";
-import { discardPreview, getSnapshot, getStoreEpoch, initStore, useStore } from "@/lib/store";
+import { discardPreview, getSnapshot, getStoreEpoch, initStore, removeItem, useStore } from "@/lib/store";
 import { startAutoSync } from "@/lib/sync";
-import { dismissToast, useToast } from "@/lib/toast";
+import { dismissToast, haptic, showToast, useToast } from "@/lib/toast";
 import type { Item } from "@/lib/types";
 import Detail from "./Detail";
 import History from "./History";
@@ -109,6 +109,16 @@ export default function App() {
       setPreviewItem(null);
     }
   }, [detailId]);
+  // Tapping the active status removes the title but keeps the detail open as an
+  // untracked preview, so another status can add it back without leaving here.
+  const untrack = useCallback((item: Item) => {
+    // Set the preview before mutating the store: removal drops the item from
+    // the snapshot, so without this the auto-close effect would fire first.
+    setPreviewItem({ ...item, deleted: false, preview: true, watched: {} });
+    removeItem(item.id);
+    showToast(`${item.title} removed`);
+    haptic(8);
+  }, []);
   useEffect(() => {
     const onPop = () => {
       const state = window.history.state as { detail?: string; preview?: Item } | null;
@@ -213,7 +223,7 @@ export default function App() {
         </ul>
       </nav>
 
-      {detail ? <Detail key={detail.id} item={detail} data={eps[detail.id]} onClose={close} /> : null}
+      {detail ? <Detail key={detail.id} item={detail} data={eps[detail.id]} onClose={close} onUntrack={untrack} /> : null}
       <Toaster />
     </div>
   );
