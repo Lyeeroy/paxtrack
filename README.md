@@ -95,6 +95,8 @@ Both keys are public and safe to ship to the browser. If both are present, the p
 
 `TMDB_API_KEY` is server-only. It is used by the `/api/tmdb/*` route handlers and is never sent to the browser.
 
+The app does not use the database password, connection strings, service-role/secret key, or JWT secret. There is no reason to add those to Vercel, and they must never be prefixed with `NEXT_PUBLIC_`.
+
 ## 6. Run locally
 
 ```bash
@@ -118,6 +120,8 @@ Without Supabase variables the app still runs in local-only mode: everything wor
    - **Site URL**: `https://your-project.vercel.app`
    - **Redirect URLs**: add `https://your-project.vercel.app/**`
 6. If you changed environment variables after deploying, trigger a new deployment so they take effect.
+
+**Note:** Next.js only exposes variables that start with `NEXT_PUBLIC_` to the browser. The Supabase Vercel integration may add `SUPABASE_PUBLISHABLE_KEY` or `SUPABASE_ANON_KEY` *without* that prefix — those alone are not enough. Add `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` explicitly (or `NEXT_PUBLIC_SUPABASE_ANON_KEY` for an older project) and redeploy. `NEXT_PUBLIC_*` values are baked into the build, so a redeploy is required after changing them.
 
 To make auth work on Vercel preview deployments, add your preview domain pattern to the redirect allowlist, for example `https://*-your-team.vercel.app/**`. Otherwise preview builds will still run, but email confirmation and password-reset links will only work on the production domain.
 
