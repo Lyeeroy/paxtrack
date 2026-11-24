@@ -92,7 +92,9 @@ export function posterUrl(path: string | null, w: 92 | 154 | 185 = 154) {
 }
 
 export function Poster({ path, title, w = 44, h = 64 }: { path: string | null; title: string; w?: number; h?: number }) {
-  const src = posterUrl(path);
+  // A 92 px TMDB image is plenty for the 32–44 px list thumbnails; w154 is for
+  // the detail hero. Smaller files mean less decode work while scrolling.
+  const src = posterUrl(path, w <= 60 ? 92 : 154);
   return (
     <div className="shrink-0 overflow-hidden rounded-md bg-raised" style={{ width: w, height: h }}>
       {src ? (

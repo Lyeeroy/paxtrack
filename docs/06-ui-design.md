@@ -58,7 +58,7 @@ When adding a feature, ask **how many taps, and how long until it responds?** If
 - **Black first.** The base is pure `#000`, which switches off pixels on OLED displays and saves battery. This is stated in the comment at the top of `src/app/globals.css` — do not lighten it casually.
 - **One accent.** Green (`#4ade80`) is used for active states, primary actions and positive feedback. Amber (`#fbbf24`) means "undo/clear", red (`#f87171`) means destructive. Nothing else competes.
 - **Dense but calm.** Information is packed into short rows with generous horizontal padding and minimal vertical padding. Secondary text recedes via the `dim`/`faint` greys instead of borders or boxes.
-- **Fast even on cheap phones.** System font only (no webfont), `content-visibility: auto` on rows (`.cv`), direct DOM writes during swipes, and short 160 ms animations (260 ms only for the sheet's entrance).
+- **Fast even on cheap phones.** System font only (no webfont), `content-visibility: auto` on rows (`.cv`), memoized `MediaRow`s, small poster requests (w92 for list thumbnails), direct DOM writes during swipes, and short 160 ms animations (260 ms only for the sheet's entrance).
 
 ## Colour and type tokens
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { refreshItem } from "@/lib/refresh";
 import { addItem, createPreview, removeItem } from "@/lib/store";
 import { haptic, showToast } from "@/lib/toast";
@@ -15,7 +15,7 @@ const STATUSES: { id: Status; label: string }[] = [
 ];
 
 /** A searchable title row: the poster/name rolls out and four statuses roll in, in place. */
-export default function MediaRow({
+function MediaRow({
   result,
   have,
   onOpen,
@@ -155,3 +155,8 @@ export default function MediaRow({
     </div>
   );
 }
+
+// Rows are memoized: Search re-renders on every store emit and every keystroke.
+// Cached results, library items and App's open callback keep stable identities,
+// so unchanged rows skip rendering entirely.
+export default memo(MediaRow);

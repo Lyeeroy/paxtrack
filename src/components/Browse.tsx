@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { Item, SearchResult } from "@/lib/types";
 import MediaRow from "./MediaRow";
 
@@ -20,6 +20,8 @@ const cache = new Map<Category, SearchResult[]>();
 /** Column gap and artwork travel; the gap must match the column margin in the markup. */
 const GAP = 10;
 const ART_SHIFT = 14;
+// Hoisted so memoized rows don't see a new style object on every parent render.
+const ART_STYLE: CSSProperties = { transform: "translate3d(var(--px, 0px), 0, 0)" };
 
 export default function Browse({
   items,
@@ -166,10 +168,13 @@ export default function Browse({
     paint();
   };
 
-  const openFromRow = (id: string, preview?: Item) => {
-    if (suppressClick.current) return;
-    onOpen(id, preview);
-  };
+  const openFromRow = useCallback(
+    (id: string, preview?: Item) => {
+      if (suppressClick.current) return;
+      onOpen(id, preview);
+    },
+    [onOpen],
+  );
 
   return (
     <div className="pt-3">
@@ -223,7 +228,7 @@ export default function Browse({
                         have={tracked.get(id)}
                         onOpen={openFromRow}
                         className="browse-art"
-                        style={{ transform: "translate3d(var(--px, 0px), 0, 0)" }}
+                        style={ART_STYLE}
                       />
                     );
                   })
