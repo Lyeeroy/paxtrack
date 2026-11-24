@@ -24,6 +24,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 | Swipe right | Episode row | Mark everything up to here |
 | Swipe left | Episode row | Clear from here |
 | Drag horizontally | Screen (outside swipe rows/inputs) | Switch tabs |
+| Drag past the first/last browse column | Search landing (Discover / In cinema) | Switch to the previous/next tab; the track is clamped so no blank space is revealed |
 | Drag from left edge | Detail view | Go back / close detail |
 | Tap twice | Remove button | Confirm removal |
 | Tap active status | Detail status buttons | Remove from library (toast; detail stays open, pick a status to re-add). With watched progress, the first tap arms a 3 s confirmation instead |
@@ -42,7 +43,8 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 - The detail view uses `window.history.pushState` / `popstate`, so it slides in immediately and the system back button / OS edge swipe closes it.
 - The library renders synchronously from the in-memory store via `useSyncExternalStore` — no loading spinner. Writes are optimistic: memory updates now, IndexedDB follows.
 - Episode data and metadata load in the background and fill in; "Loading episodes…" never blocks the rest of the screen.
-- Search debounces 350 ms, caches results in memory, shows trending when empty, and discards stale responses with a sequence id.
+- Search debounces 350 ms, caches results in memory, and discards stale responses with a sequence id. Results paginate: an `IntersectionObserver` sentinel 240 px before the bottom loads the next page automatically, with a "Load more" button as the tap/keyboard fallback. The cache holds accumulated pages per query, so returning to the tab restores every loaded result.
+- With an empty query the Search tab shows `Browse`: five **vertical columns** — Discover, Trending, Popular, Top rated, In cinema — each a stacked list of poster rows. You swipe sideways to move between columns; the next column is clipped at the right edge (82 % width + 16 px gutter) as the affordance. The dots stay sticky just above the bottom tab bar (`bottom-[calc(env(safe-area-inset-bottom)+76px)]`, above the 66 px capsule) with a `bg-black/70` pill so they remain legible as titles scroll underneath; they jump to a column by tap. Tapping a title opens the same detail view as a search result.
 - Small accelerations add up: the last library filter is remembered across tab switches, undo toasts reverse mistakes without leaving the screen, and the `+` button marks the next episode without opening Detail.
 - Transitions are 160 ms. Anything longer feels sluggish on a phone. The bottom sheet is the one exception (260 ms in, 200 ms out) because it is a physical surface; see [ADR 0007](./decisions/0007-sheet-interaction-contract.md).
 
@@ -120,6 +122,7 @@ Reuse these before creating anything new:
 - Tab colour/transform transitions: 200 ms. Active tab label expansion: 300 ms. Progress bar: 300 ms.
 - Press feedback is `active:scale-95` on chips/tabs and `active:bg-surface`/`active:opacity-80` elsewhere, plus optional haptics via `haptic()`.
 - `prefers-reduced-motion` collapses all animations/transitions to 1 ms in `globals.css` — keep any new motion inside that rule. `Sheet` also checks the media query in JS and uses 0 ms for its WAAPI exit/snap.
+- The Browse columns are finger-driven, never auto-play: the track follows the horizontal drag and each column's poster rows shift up to ±14 px based on their position relative to the active column. Transforms are written straight to the DOM via a `--px` CSS variable (no React re-render per pointer move); the column snap and the artwork settle in 160 ms. The dots are the tap fallback for the swipe.
 - Focus is a 2 px accent outline with 2 px offset (`:focus-visible`). Never remove it without a visible replacement.
 
 ## Accessibility is part of the style

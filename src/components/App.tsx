@@ -203,7 +203,7 @@ export default function App() {
           <div key={tab} className="anim-up">
             {tab === "library" ? <Library items={items} eps={eps} onOpen={open} goSearch={() => selectTab("search")} /> : null}
             {tab === "upcoming" ? <Upcoming items={items} eps={eps} onOpen={open} /> : null}
-            {tab === "search" ? <Search items={items} onOpen={open} inputRef={searchInput} /> : null}
+            {tab === "search" ? <Search items={items} onOpen={open} inputRef={searchInput} onSwipeTab={go} /> : null}
             {tab === "history" ? <History items={items} eps={eps} onOpen={open} /> : null}
             {tab === "settings" ? <Settings /> : null}
           </div>

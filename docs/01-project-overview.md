@@ -25,7 +25,8 @@ Requirements: Node 20.9+, a Supabase project (optional — local-only mode works
 
 ```text
 src/app/                     Route Handlers and route files (server-side)
-  api/tmdb/search/route.ts   Search + weekly trending (TMDB proxy)
+  api/tmdb/search/route.ts   Search + weekly trending (TMDB proxy, paginated via ?page=)
+  api/tmdb/browse/route.ts   Five browse columns (Discover/Trending/Popular/Top rated/In cinema)
   api/tmdb/title/route.ts    Title metadata + full episode lists
   auth/callback/route.ts     PKCE code → session cookie
   auth/confirm/route.ts      Custom email-template token verification
@@ -35,7 +36,7 @@ src/app/                     Route Handlers and route files (server-side)
   layout.tsx / manifest.ts / globals.css / icon.svg / apple-icon.tsx
 src/components/              All UI, every file "use client"
   App.tsx                    Shell, tab state, boot sequence, detail navigation
-  Library / Detail / Search / Upcoming / History / Settings / CloudSync
+  Library / Detail / Search / Browse / Upcoming / History / Settings / CloudSync
   ui.tsx                     Icons and shared primitives (Poster, Progress, SwipeRow, …)
 src/lib/                     State and side effects
   store.ts                   In-memory library + IndexedDB persistence (the source of truth)

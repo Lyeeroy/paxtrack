@@ -70,6 +70,14 @@ button {
   display: none;
 }
 
+/* Browse columns: artwork follows the finger and settles with the column snap. */
+.browse-art {
+  transition: transform 160ms ease-out;
+}
+.browse-viewport[data-dragging="true"] .browse-art {
+  transition: none;
+}
+
 @keyframes slide-in {
   from {
     transform: translateX(24px);
