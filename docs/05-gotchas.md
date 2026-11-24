@@ -47,7 +47,8 @@ The root `AGENTS.md` block is generated and re-added by `next dev`. It points to
 
 - **The sheet closes in one place.** `Sheet` starts its exit and calls `onClose` on the same tick. Do not add a `closing` flag, a `setTimeout`, or an "animation already played" ref in the parent; that is what made the old sheet drift from history and double-back.
 - **A history entry must be popped, not just hidden.** `openInfo` pushes `{ info: true }`; `closeInfo` calls `history.back()` when that state is active, otherwise `setInfoOpen(false)`. Closing via the sheet's X, backdrop or Escape goes through the same `onClose`, so system back and in-sheet close cannot disagree.
-- **Do not make the whole sheet draggable.** Content scrolled down owns the gesture; only the header, or content at `scrollTop === 0` after the 120 ms scroll lock, may start a dismiss. This prevents a downward scroll from closing the sheet.
+- **Do not make the whole sheet draggable.** Content scrolled down owns the gesture; only the header, or content at `scrollTop === 0` after the 120 ms scroll lock, may start a dismiss. Upward expansion is header-only so it never steals a content scroll.
+- **Detents are one gesture each.** Up from the header expands to the top, down from expanded collapses, down from collapsed dismisses. Do not try to chain collapse-then-dismiss in one drag; the detent is committed to React state only after the resize animation finishes.
 - **Portal the sheet to `document.body`.** The detail view is `aria-hidden` and `overflow-hidden` while the sheet is open; a sheet rendered inside it would be hidden or clipped. The background also needs `inert`/`aria-hidden` so focus and screen readers stay in the sheet.
 - **Keep the motion constants in sync.** `SHEET_*` in `ui.tsx` and `--ease-sheet`/`.anim-sheet` in `globals.css` describe the same 260/200 ms motion. Reduced motion is handled in both places.
 

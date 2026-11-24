@@ -263,8 +263,10 @@ const SHEET_EASE = "cubic-bezier(0.32, 0.72, 0, 1)"; // keep in sync with --ease
 const SHEET_OPEN_MS = 260; // keep in sync with .anim-sheet in globals.css
 const SHEET_CLOSE_MS = 200;
 const SHEET_SNAP_MS = 200;
-const SHEET_CLOSE_VELOCITY = 0.35; // px/ms downward — a flick, not a slow drag
+const SHEET_CLOSE_VELOCITY = 0.35; // px/ms — a flick, not a slow drag
 const SHEET_SCROLL_LOCK_MS = 120; // don't turn the end of a scroll into a dismiss
+const SHEET_DETENT_MS = 200; // resize between collapsed and expanded
+const SHEET_DETENT_MIN = 48; // min travel before a resize is committed
 
 type SheetPhase = "closed" | "opening" | "open" | "closing";
 
@@ -283,14 +285,37 @@ function translateY(el: HTMLElement) {
   }
 }
 
+type SheetDragMode = "dismiss" | "expand" | "collapse";
+
 type SheetDrag = {
   id: number;
   startX: number;
   startY: number;
   baseY: number;
+  baseH: number;
+  collapsedH: number;
+  expandedH: number;
+  fromChrome: boolean;
+  mode: SheetDragMode | null;
   active: boolean;
-  points: { y: number; t: number }[];
+  points: { dy: number; t: number }[];
 };
+
+function expandedHeight() {
+  return Math.round(window.innerHeight);
+}
+
+/** Natural (content-driven) height, capped by the caller's maxHeight. */
+function measureCollapsed(el: HTMLElement, maxHeight: string) {
+  const prevH = el.style.height;
+  const prevMax = el.style.maxHeight;
+  el.style.height = "auto";
+  el.style.maxHeight = maxHeight;
+  const h = el.offsetHeight;
+  el.style.height = prevH;
+  el.style.maxHeight = prevMax;
+  return h;
+}
 
 export type SheetProps = {
   open: boolean;
@@ -306,17 +331,20 @@ export type SheetProps = {
 /**
  * Reusable modal bottom sheet. The parent owns `open` and (in the detail view)
  * the history entry; this component owns the enter/exit motion, drag-to-dismiss,
- * scrim fade, focus trap and the close button.
+ * the collapsed/expanded detents, scrim fade, focus trap and close button.
  *
  * Dismissal starts the exit immediately; the parent's `onClose` runs in the
  * same tick, so history and the closing animation never drift apart. A drag is
  * only picked up from the sheet chrome, or from content that is scrolled to the
- * top, so it can never swallow a downward content scroll.
+ * top, so it can never swallow a downward content scroll. Dragging up from the
+ * chrome expands the sheet to the top of the screen; dragging down from there
+ * returns it to the default height. Each gesture moves one detent.
  *
  * Keep the exit path in one place (here) rather than adding timers in parents.
  */
 export function Sheet({ open, onClose, title, subtitle, children, footer, maxHeight = "78dvh" }: SheetProps) {
   const [rendered, setRendered] = useState(open);
+  const [expanded, setExpanded] = useState(false);
   const panel = useRef<HTMLDivElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
@@ -329,6 +357,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
   const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panelAnim = useRef<Animation | null>(null);
   const backdropAnim = useRef<Animation | null>(null);
+  const heightAnim = useRef<Animation | null>(null);
   const onCloseRef = useRef(onClose);
 
   useEffect(() => {
@@ -339,6 +368,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
     () => () => {
       panelAnim.current?.cancel();
       backdropAnim.current?.cancel();
+      heightAnim.current?.cancel();
       if (suppressTimer.current) clearTimeout(suppressTimer.current);
     },
     [],
@@ -413,21 +443,59 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
     };
   }, []);
 
+  const animateHeight = useCallback((from: number, to: number, ms: number, done?: () => void) => {
+    const el = panel.current;
+    if (!el) return;
+    heightAnim.current?.cancel();
+    heightAnim.current = null;
+    if (ms <= 0) {
+      el.style.height = `${to}px`;
+      done?.();
+      return;
+    }
+    const anim = el.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+      duration: ms,
+      easing: SHEET_EASE,
+      fill: "both",
+    });
+    heightAnim.current = anim;
+    anim.onfinish = () => {
+      if (heightAnim.current === anim) heightAnim.current = null;
+      el.style.height = `${to}px`;
+      anim.cancel();
+      done?.();
+    };
+  }, []);
+
+  /** Commit a detent: DOM style first, then React state so they cannot fight. */
+  const setDetent = useCallback((isExpanded: boolean, h?: number) => {
+    const el = panel.current;
+    if (el) {
+      el.style.maxHeight = isExpanded ? "100dvh" : maxHeight;
+      el.style.height = h === undefined ? (isExpanded ? "100dvh" : "") : `${h}px`;
+    }
+    setExpanded(isExpanded);
+  }, [maxHeight]);
+
   const beginClose = useCallback(
     (notify: boolean) => {
       if (phase.current === "closing" || phase.current === "closed") return;
       const el = panel.current;
       if (!el) {
         phase.current = "closed";
+        setExpanded(false);
         setRendered(false);
         return;
       }
       phase.current = "closing";
       stopIntro();
+      heightAnim.current?.cancel();
+      heightAnim.current = null;
       const from = translateY(el);
       const ms = reducedMotion() ? 0 : SHEET_CLOSE_MS;
       animatePanel(from, el.offsetHeight, ms, () => {
         phase.current = "closed";
+        setExpanded(false);
         setRendered(false);
       });
       animateBackdrop(0, ms);
@@ -438,6 +506,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
 
   const beginOpen = useCallback(() => {
     if (phase.current === "opening" || phase.current === "open") return;
+    setExpanded(false);
     if (!panel.current || phase.current === "closed") {
       phase.current = "opening";
       setRendered(true);
@@ -576,7 +645,19 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
       if (scroller.scrollTop > 0) return;
       if (performance.now() - lastScrollAt.current < SHEET_SCROLL_LOCK_MS) return;
     }
-    drag.current = { id: e.pointerId, startX: e.clientX, startY: e.clientY, baseY: 0, active: false, points: [] };
+    drag.current = {
+      id: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      baseY: 0,
+      baseH: 0,
+      collapsedH: 0,
+      expandedH: 0,
+      fromChrome: !scroller?.contains(target),
+      mode: null,
+      active: false,
+      points: [],
+    };
   };
 
   const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -587,13 +668,26 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
     const dy = e.clientY - d.startY;
     if (!d.active) {
       if (Math.abs(dy) < 8) return;
-      // Horizontal or upward means the content, not the sheet.
-      if (Math.abs(dx) > Math.abs(dy) * 1.2 || dy < 0) {
+      if (Math.abs(dx) > Math.abs(dy) * 1.2) {
         drag.current = null;
         return;
       }
+      // Each gesture moves one detent: down dismisses (or collapses from the
+      // top), up from the chrome expands. Up from content stays with scrolling.
+      let mode: SheetDragMode | null = null;
+      if (dy > 0) mode = expanded ? "collapse" : "dismiss";
+      else if (d.fromChrome && !expanded) mode = "expand";
+      if (!mode) {
+        drag.current = null;
+        return;
+      }
+      d.mode = mode;
       d.active = true;
       d.baseY = stopIntro();
+      d.baseH = el.offsetHeight;
+      d.expandedH = expandedHeight();
+      d.collapsedH = mode === "collapse" ? measureCollapsed(el, maxHeight) : d.baseH;
+      if (mode === "expand") el.style.maxHeight = "100dvh";
       if (phase.current === "opening") phase.current = "open";
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -602,13 +696,20 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
       }
     }
     e.preventDefault();
-    const y = Math.max(0, d.baseY + dy);
-    el.style.transform = `translate3d(0,${y}px,0)`;
-    const height = el.offsetHeight || 1;
-    if (backdrop.current) backdrop.current.style.opacity = String(Math.max(0, 1 - y / height));
     const now = performance.now();
-    d.points.push({ y, t: now });
+    d.points.push({ dy, t: now });
     while (d.points.length > 2 && now - d.points[0].t > 120) d.points.shift();
+
+    if (d.mode === "dismiss") {
+      const y = Math.max(0, d.baseY + dy);
+      el.style.transform = `translate3d(0,${y}px,0)`;
+      const height = el.offsetHeight || 1;
+      if (backdrop.current) backdrop.current.style.opacity = String(Math.max(0, 1 - y / height));
+    } else if (d.mode === "expand") {
+      el.style.height = `${Math.min(d.expandedH, Math.max(d.baseH, d.baseH - dy))}px`;
+    } else {
+      el.style.height = `${Math.min(d.baseH, Math.max(d.collapsedH, d.baseH - dy))}px`;
+    }
   };
 
   const snapBack = (from: number) => {
@@ -621,32 +722,58 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     drag.current = null;
-    if (!d.active) return;
-    const el = panel.current;
-    const y = el ? translateY(el) : 0;
-    if (cancelled) {
-      snapBack(y);
-      return;
-    }
+    if (!d.active || !d.mode) return;
     e.preventDefault();
+    const el = panel.current;
     const now = performance.now();
     const last = d.points[d.points.length - 1];
     const first = d.points.find((p) => now - p.t <= 120) ?? d.points[0];
     let velocity = 0;
     if (last && first && now - last.t <= 100) {
       const dt = last.t - first.t;
-      if (dt > 0) velocity = Math.max(0, Math.min(3, (last.y - first.y) / dt));
+      if (dt > 0) velocity = Math.max(0, Math.min(3, Math.abs(last.dy - first.dy) / dt));
     }
-    const height = el?.offsetHeight || 1;
-    // Distance OR speed. A short fast flick should dismiss; a slow quarter
-    // drag should too. A fixed 72 px threshold felt sticky and accidental.
-    const threshold = Math.min(Math.max(height * 0.25, 64), 180);
-    if (y > threshold || velocity > SHEET_CLOSE_VELOCITY) {
-      haptic();
-      beginClose(true);
+    const ms = reducedMotion() ? 0 : SHEET_DETENT_MS;
+
+    if (d.mode === "dismiss") {
+      const y = el ? translateY(el) : 0;
+      if (cancelled) {
+        snapBack(y);
+      } else {
+        const height = el?.offsetHeight || 1;
+        // Distance OR speed. A short fast flick should dismiss; a slow quarter
+        // drag should too. A fixed 72 px threshold felt sticky and accidental.
+        const threshold = Math.min(Math.max(height * 0.25, 64), 180);
+        if (y > threshold || velocity > SHEET_CLOSE_VELOCITY) {
+          haptic();
+          beginClose(true);
+        } else {
+          snapBack(y);
+        }
+      }
+    } else if (d.mode === "expand") {
+      const h = el?.offsetHeight ?? d.baseH;
+      const travel = h - d.baseH;
+      const threshold = Math.min(Math.max((d.expandedH - d.baseH) * 0.25, SHEET_DETENT_MIN), 180);
+      if (!cancelled && (travel > threshold || velocity > SHEET_CLOSE_VELOCITY)) {
+        haptic();
+        if (el) el.style.maxHeight = "100dvh";
+        animateHeight(h, d.expandedH, ms, () => setDetent(true, d.expandedH));
+      } else {
+        animateHeight(h, d.baseH, ms, () => setDetent(false));
+      }
     } else {
-      snapBack(y);
+      const h = el?.offsetHeight ?? d.baseH;
+      const travel = d.baseH - h;
+      const threshold = Math.min(Math.max((d.baseH - d.collapsedH) * 0.25, SHEET_DETENT_MIN), 180);
+      if (!cancelled && (travel > threshold || velocity > SHEET_CLOSE_VELOCITY)) {
+        haptic();
+        animateHeight(h, d.collapsedH, ms, () => setDetent(false));
+      } else {
+        animateHeight(h, d.baseH, ms, () => setDetent(true, d.expandedH));
+      }
     }
+
     suppressClick.current = true;
     if (suppressTimer.current) clearTimeout(suppressTimer.current);
     suppressTimer.current = setTimeout(() => {
@@ -683,8 +810,9 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, maxHei
         onPointerUp={(e) => finishDrag(e)}
         onPointerCancel={(e) => finishDrag(e, true)}
         className="anim-sheet outline-none absolute inset-x-0 bottom-0 mx-auto flex max-w-xl flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]"
-        style={{ maxHeight }}
+        style={{ maxHeight: expanded ? "100dvh" : maxHeight, height: expanded ? "100dvh" : undefined }}
       >
+        {expanded ? <div aria-hidden className="h-[env(safe-area-inset-top)] shrink-0" /> : null}
         <div className="shrink-0 cursor-grab touch-none px-3 pt-2.5 active:cursor-grabbing">
           <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-line" />
           <div className="mt-1 flex items-start gap-2 px-1 pb-2">

@@ -34,7 +34,8 @@ The first implementation had no visible close button, grabbed the drag anywhere 
 - Drag starts from the sheet chrome, or from content only when it is scrolled to the top (120 ms scroll lock). Upward and horizontal gestures stay with the content.
 - Dismiss at 25% of the panel height (clamped 64–180 px) or a downward flick over 0.35 px/ms.
 - A 44×44 close button, backdrop tap, Escape and system back all dismiss.
-- Motion is 260 ms in / 200 ms out with `cubic-bezier(0.32, 0.72, 0, 1)`, the documented exception to the 160 ms rule. Reduced motion uses 0 ms.
+- The sheet has two detents: drag up from the header to fill the screen, drag down from there to return to the default height. Each gesture moves one detent.
+- Motion is 260 ms in / 200 ms out and between detents with `cubic-bezier(0.32, 0.72, 0, 1)`, the documented exception to the 160 ms rule. Reduced motion uses 0 ms.
 - Focus is trapped and restored; the detail behind is `aria-hidden`, the main tab content is `inert`, and body scroll is locked.
 
 The rest of this ADR still stands: the sheet is a narrow, single-purpose exception, and future overlays should reuse it.
