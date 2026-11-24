@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { initAuth } from "@/lib/auth";
 import { checkNotifications, notificationsEnabled, registerPeriodic } from "@/lib/notify";
 import { refreshStale } from "@/lib/refresh";
@@ -24,6 +24,9 @@ const TABS = [
   { id: "settings", label: "Settings", Icon: IconSettings },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
+
+// useLayoutEffect in the browser (no first-paint flash), no-op warning on the server.
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function Toaster() {
   const t = useToast();
@@ -63,6 +66,10 @@ export default function App() {
   const [infoOpen, setInfoOpen] = useState(false);
   const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
+  const navList = useRef<HTMLUListElement | null>(null);
+  const tabButtons = useRef<Array<HTMLButtonElement | null>>([]);
+  const highlight = useRef<HTMLSpanElement | null>(null);
+  const highlightPlaced = useRef(false);
 
   // ---- boot: local DB -> sync -> background refresh -> notifications
   useEffect(() => {
@@ -95,6 +102,29 @@ export default function App() {
       window.removeEventListener("online", onVis);
     };
   }, []);
+
+  // ---- one green pill slides to the active tab; measured so it works at any width
+  useIsoLayoutEffect(() => {
+    const ul = navList.current;
+    const pill = highlight.current;
+    const button = tabButtons.current[TABS.findIndex((entry) => entry.id === tab)];
+    if (!ul || !pill || !button) return;
+
+    const place = () => {
+      if (!highlightPlaced.current) pill.style.transition = "none";
+      pill.style.transform = `translateX(${button.offsetLeft}px)`;
+      pill.style.width = `${button.offsetWidth}px`;
+      if (!highlightPlaced.current) {
+        void pill.offsetWidth; // commit the start position before enabling motion
+        pill.style.transition = "";
+        highlightPlaced.current = true;
+      }
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(ul);
+    return () => observer.disconnect();
+  }, [tab]);
 
   // ---- detail view lives on the history stack so system back / edge swipe closes it
   const open = useCallback((id: string, preview?: Item) => {
@@ -214,19 +244,28 @@ export default function App() {
         aria-label="Main"
         aria-hidden={!!detail}
         inert={!!detail}
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-2 pb-[calc(env(safe-area-inset-bottom)+10px)]"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[calc(env(safe-area-inset-bottom)+10px)]"
       >
-        <ul className="pointer-events-auto flex w-full items-center justify-around gap-0.5 rounded-full border border-line bg-raised/80 p-1.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl sm:w-auto">
-          {TABS.map(({ id, label, Icon }) => {
+        <ul
+          ref={navList}
+          className="pointer-events-auto relative flex w-full items-center gap-0.5 rounded-full border border-line bg-raised/80 p-1.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl sm:w-auto"
+        >
+          <span
+            ref={highlight}
+            aria-hidden
+            className="pointer-events-none absolute inset-y-1.5 left-0 w-0 rounded-full bg-accent/15 transition-[transform,width] duration-200 ease-out"
+          />
+          {TABS.map(({ id, label, Icon }, index) => {
             const active = tab === id;
             return (
               <li key={id} className="min-w-0 flex-1 sm:flex-none">
                 <button
+                  ref={(node) => { tabButtons.current[index] = node; }}
                   onClick={() => selectTab(id)}
                   aria-current={active ? "page" : undefined}
                   aria-label={label}
-                  className={`flex h-11 w-full items-center justify-center rounded-full px-2 transition-[background-color,color,transform] duration-200 active:scale-95 sm:w-[72px] ${
-                    active ? "bg-accent/15 text-accent" : "text-faint hover:text-dim"
+                  className={`relative z-10 flex h-11 w-full items-center justify-center rounded-full px-2 transition-[color,transform] duration-200 active:scale-95 sm:w-[72px] ${
+                    active ? "text-accent" : "text-faint hover:text-dim"
                   }`}
                 >
                   <Icon className="h-[21px] w-[21px] shrink-0" />

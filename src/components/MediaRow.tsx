@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { refreshItem } from "@/lib/refresh";
-import { addItem, createPreview } from "@/lib/store";
+import { addItem, createPreview, removeItem } from "@/lib/store";
 import { haptic, showToast } from "@/lib/toast";
 import type { Item, SearchResult, Status } from "@/lib/types";
 import { IconPlus, Poster, TypeTag } from "./ui";
@@ -29,7 +29,17 @@ export default function MediaRow({
   style?: CSSProperties;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmStatus, setConfirmStatus] = useState<Status | null>(null);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = `${result.type}-${result.tmdbId}`;
+
+  useEffect(() => () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); }, []);
+
+  const disarm = () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    confirmTimer.current = null;
+    setConfirmStatus(null);
+  };
 
   const add = (status: Status) => {
     haptic();
@@ -37,6 +47,32 @@ export default function MediaRow({
     showToast(`${result.title} · added to ${STATUSES.find((s) => s.id === status)?.label}`);
     void refreshItem(item);
     setExpanded(false);
+  };
+
+  // Tapping the status you already have mirrors Detail: arm "Tap again" for 3 s,
+  // then remove the title instead of re-adding it.
+  const pick = (status: Status) => {
+    const active = !!have && !have.deleted && have.status === status;
+    if (active && confirmStatus !== status) {
+      haptic();
+      setConfirmStatus(status);
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => {
+        confirmTimer.current = null;
+        setConfirmStatus(null);
+      }, 3000);
+      return;
+    }
+    if (active) {
+      haptic(8);
+      removeItem(id);
+      showToast(`${result.title} removed`);
+      disarm();
+      setExpanded(false);
+      return;
+    }
+    disarm();
+    add(status);
   };
 
   const front: CSSProperties = {
@@ -80,22 +116,33 @@ export default function MediaRow({
             }`}
             style={back}
           >
-            {STATUSES.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => add(s.id)}
-                tabIndex={expanded ? 0 : -1}
-                className={`h-9 flex-1 rounded-full px-1 text-[11px] active:opacity-80 ${
-                  have && !have.deleted && have.status === s.id ? "bg-accent/15 text-accent" : "bg-surface text-dim active:bg-raised"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
+            {STATUSES.map((s) => {
+              const armed = confirmStatus === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => pick(s.id)}
+                  tabIndex={expanded ? 0 : -1}
+                  aria-label={armed ? `Tap again to remove ${result.title}` : undefined}
+                  className={`h-9 flex-1 rounded-full px-1 text-[11px] active:opacity-80 ${
+                    armed
+                      ? "bg-danger/15 text-danger"
+                      : have && !have.deleted && have.status === s.id
+                        ? "bg-accent/15 text-accent"
+                        : "bg-surface text-dim active:bg-raised"
+                  }`}
+                >
+                  {armed ? "Tap again" : s.label}
+                </button>
+              );
+            })}
           </div>
         </div>
         <button
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            if (expanded) disarm();
+            setExpanded(!expanded);
+          }}
           aria-expanded={expanded}
           aria-label={`${expanded ? "Hide" : "Show"} status options for ${result.title}`}
           className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line text-accent transition-all duration-200 active:bg-raised ${
