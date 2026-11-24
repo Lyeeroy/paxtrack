@@ -216,28 +216,20 @@ export default function App() {
         inert={!!detail}
         className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-2 pb-[calc(env(safe-area-inset-bottom)+10px)]"
       >
-        <ul className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-line bg-raised/80 p-1.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl">
+        <ul className="pointer-events-auto flex w-full items-center justify-around gap-0.5 rounded-full border border-line bg-raised/80 p-1.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl sm:w-auto">
           {TABS.map(({ id, label, Icon }) => {
             const active = tab === id;
             return (
-              <li key={id}>
+              <li key={id} className="min-w-0 flex-1 sm:flex-none">
                 <button
                   onClick={() => selectTab(id)}
                   aria-current={active ? "page" : undefined}
                   aria-label={label}
-                  className={`flex h-11 items-center rounded-full px-3 text-xs font-medium transition-[background-color,color,transform] duration-200 active:scale-95 ${
+                  className={`flex h-11 w-full items-center justify-center rounded-full px-2 transition-[background-color,color,transform] duration-200 active:scale-95 sm:w-[72px] ${
                     active ? "bg-accent/15 text-accent" : "text-faint hover:text-dim"
                   }`}
                 >
                   <Icon className="h-[21px] w-[21px] shrink-0" />
-                  <span
-                    aria-hidden
-                    className={`overflow-hidden whitespace-nowrap transition-all duration-300 ease-out ${
-                      active ? "ml-1.5 max-w-[64px] opacity-100" : "max-w-0 opacity-0"
-                    }`}
-                  >
-                    {label}
-                  </span>
                 </button>
               </li>
             );
