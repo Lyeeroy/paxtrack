@@ -14,7 +14,7 @@ const STATUSES: { id: Status; label: string }[] = [
   { id: "dropped", label: "Dropped" },
 ];
 
-/** A searchable title row: tap the poster to open details, tap + for the four statuses. */
+/** A searchable title row: the poster/name rolls out and four statuses roll in, in place. */
 export default function MediaRow({
   result,
   have,
@@ -39,24 +39,61 @@ export default function MediaRow({
     setExpanded(false);
   };
 
+  const front: CSSProperties = {
+    transform: expanded ? "translateX(-20px) rotateY(-18deg)" : "translateX(0) rotateY(0deg)",
+    opacity: expanded ? 0 : 1,
+  };
+  const back: CSSProperties = {
+    transform: expanded ? "translateX(0) rotateY(0deg)" : "translateX(20px) rotateY(18deg)",
+    opacity: expanded ? 1 : 0,
+  };
+
   return (
     <div className={`border-b border-line/60 ${className}`} style={style}>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => onOpen(id, have ? undefined : createPreview(result))}
-          className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
-          aria-label={`${result.title}, open details`}
-        >
-          <Poster path={result.poster} title={result.title} />
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-medium">{result.title}</p>
-            <p className="mt-1 flex items-center gap-2 text-xs text-dim">
-              <TypeTag anime={result.anime} type={result.type} />
-              <span>{result.year}</span>
-              {have && !have.deleted ? <span className="text-accent">In library</span> : null}
-            </p>
+      <div className="flex items-center gap-3 py-2.5">
+        <div className="relative h-16 min-w-0 flex-1" style={{ perspective: 600 }}>
+          <div
+            aria-hidden={expanded}
+            className={`absolute inset-0 flex items-center gap-3 transition-[transform,opacity] duration-200 ease-out ${expanded ? "pointer-events-none" : ""}`}
+            style={front}
+          >
+            <button
+              onClick={() => onOpen(id, have ? undefined : createPreview(result))}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+              aria-label={`${result.title}, open details`}
+            >
+              <Poster path={result.poster} title={result.title} />
+              <div className="min-w-0">
+                <p className="truncate text-[15px] font-medium">{result.title}</p>
+                <p className="mt-1 flex items-center gap-2 text-xs text-dim">
+                  <TypeTag anime={result.anime} type={result.type} />
+                  <span>{result.year}</span>
+                  {have && !have.deleted ? <span className="text-accent">In library</span> : null}
+                </p>
+              </div>
+            </button>
           </div>
-        </button>
+          <div
+            aria-hidden={!expanded}
+            className={`absolute inset-0 flex items-center gap-1.5 transition-[transform,opacity] duration-200 ease-out ${
+              expanded ? "" : "pointer-events-none"
+            }`}
+            style={back}
+          >
+            {STATUSES.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => add(s.id)}
+                tabIndex={expanded ? 0 : -1}
+                className={`h-9 flex-1 rounded-full px-1 text-[11px] active:opacity-80 ${
+                  have && !have.deleted && have.status === s.id ? "bg-accent/15 text-accent" : "bg-surface text-dim active:bg-raised"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
@@ -67,23 +104,6 @@ export default function MediaRow({
         >
           <IconPlus className="h-5 w-5" />
         </button>
-      </div>
-      <div
-        className={`overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
-          expanded ? "max-h-16 opacity-100" : "max-h-0 opacity-0"
-        }`}
-      >
-        <div className="flex gap-1.5 pb-2.5">
-          {STATUSES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => add(s.id)}
-              className="h-9 flex-1 rounded-full bg-surface px-1 text-[11px] text-dim active:bg-raised"
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
