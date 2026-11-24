@@ -13,6 +13,8 @@
   --color-accent: #4ade80;
   --color-warn: #fbbf24;
   --color-danger: #f87171;
+  /* iOS-like settle curve for the bottom sheet; also used by WAAPI in ui.tsx. */
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 :root {
@@ -102,8 +104,21 @@ button {
     transform: none;
   }
 }
+/* A sheet is physical: it gets a little longer than an in-page transition.
+   Keep 260ms in sync with SHEET_OPEN_MS in src/components/ui.tsx. */
 .anim-sheet {
-  animation: sheet-up 160ms ease-out;
+  animation: sheet-up 260ms var(--ease-sheet);
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.anim-fade {
+  animation: fade-in 260ms var(--ease-sheet) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -78,7 +78,6 @@ export default function Detail({
   item,
   data,
   infoOpen,
-  infoClosing,
   onOpenInfo,
   onCloseInfo,
   onClose,
@@ -87,7 +86,6 @@ export default function Detail({
   item: Item;
   data: EpData | undefined;
   infoOpen: boolean;
-  infoClosing: boolean;
   onOpenInfo: () => void;
   onCloseInfo: () => void;
   onClose: () => void;
@@ -97,6 +95,7 @@ export default function Detail({
   const [confirm, setConfirm] = useState(false);
   const [confirmUntrack, setConfirmUntrack] = useState(false);
   const [info, setInfo] = useState<TitleInfo | null>(() => cachedInfo(item.id));
+  const [infoResolved, setInfoResolved] = useState(() => !!info);
   const edge = useRef<{ x: number; y: number } | null>(null);
   const today = todayStr();
 
@@ -110,7 +109,9 @@ export default function Detail({
     if (!infoOpen || info) return;
     let alive = true;
     void loadInfo(item).then((r) => {
-      if (alive && r) setInfo(r);
+      if (!alive) return;
+      if (r) setInfo(r);
+      setInfoResolved(true);
     });
     return () => {
       alive = false;
@@ -131,9 +132,10 @@ export default function Detail({
 
   return (
     <div
-      className="anim-slide fixed inset-0 z-40 overflow-y-auto bg-black"
+      className={`anim-slide fixed inset-0 z-40 bg-black ${infoOpen ? "overflow-hidden" : "overflow-y-auto"}`}
       role="dialog"
       aria-label={item.title}
+      aria-hidden={infoOpen || undefined}
       onPointerDownCapture={(e) => {
         if ((e.target as HTMLElement).closest("[data-swipe]")) return;
         if (e.clientX < 24) {
@@ -147,7 +149,7 @@ export default function Detail({
         if (s && e.clientX - s.x > 70 && Math.abs(e.clientY - s.y) < 60) onClose();
       }}
     >
-      <div className="mx-auto max-w-xl pb-[calc(env(safe-area-inset-bottom)+32px)]" aria-hidden={infoOpen}>
+      <div className="mx-auto max-w-xl pb-[calc(env(safe-area-inset-bottom)+32px)]">
         <div className="sticky top-0 z-10 flex items-center bg-black/90 px-2 pt-[env(safe-area-inset-top)]">
           <button onClick={onClose} aria-label="Back" className="flex h-12 w-12 items-center justify-center rounded-full text-fg active:bg-surface">
             <IconBack />
@@ -310,37 +312,39 @@ export default function Detail({
         </div>
       </div>
 
-      {infoOpen ? (
-        <Sheet title={item.title} onClose={onCloseInfo} closing={infoClosing}>
-          <div className="px-4 pb-2 pt-1">
-            {info?.overview ? (
-              <p className="text-[14px] leading-relaxed text-dim">{info.overview}</p>
-            ) : (
-              <p className="text-[13px] text-faint">Synopsis is available when online.</p>
-            )}
-            {info?.genres?.length ? (
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {info.genres.map((g) => (
-                  <span key={g} className="rounded-full bg-raised px-3 py-1.5 text-[13px] text-dim">
-                    {g}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            <dl className="mt-5 divide-y divide-line/70 overflow-hidden rounded-2xl bg-surface">
-              <InfoRow label="Rating" value={info?.voteAverage ? `${info.voteAverage.toFixed(1)} / 10` : null} />
-              <InfoRow label={item.type === "movie" ? "Runtime" : "Episode length"} value={formatRuntime(info?.runtime ?? null)} />
-              <InfoRow label="Release date" value={item.releaseDate?.slice(0, 10) ?? null} />
-              <InfoRow label="Type" value={item.anime ? "Anime" : item.type === "tv" ? "TV series" : "Movie"} />
-              <InfoRow
-                label={item.type === "tv" ? "Series status" : "Release status"}
-                value={item.tvStatus ?? (item.type === "tv" && st.upcoming ? "Returning Series" : null)}
-              />
-              <InfoRow label="Added" value={new Date(item.addedAt).toISOString().slice(0, 10)} />
-            </dl>
-          </div>
-        </Sheet>
-      ) : null}
+      <Sheet open={infoOpen} onClose={onCloseInfo} title={item.title} subtitle="Details">
+        <div className="px-4 pb-4 pt-1">
+          {info?.overview ? (
+            <p className="text-[14px] leading-relaxed text-dim">{info.overview}</p>
+          ) : !infoResolved ? (
+            <p role="status" className="text-[13px] text-faint">
+              Loading synopsis…
+            </p>
+          ) : (
+            <p className="text-[13px] text-faint">No synopsis available.</p>
+          )}
+          {info?.genres?.length ? (
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {info.genres.map((g) => (
+                <span key={g} className="rounded-full bg-raised px-3 py-1.5 text-[13px] text-dim">
+                  {g}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <dl className="mt-5 divide-y divide-line/70 overflow-hidden rounded-2xl bg-raised">
+            <InfoRow label="Rating" value={info?.voteAverage ? `${info.voteAverage.toFixed(1)} / 10` : null} />
+            <InfoRow label={item.type === "movie" ? "Runtime" : "Episode length"} value={formatRuntime(info?.runtime ?? null)} />
+            <InfoRow label="Release date" value={item.releaseDate?.slice(0, 10) ?? null} />
+            <InfoRow label="Type" value={item.anime ? "Anime" : item.type === "tv" ? "TV series" : "Movie"} />
+            <InfoRow
+              label={item.type === "tv" ? "Series status" : "Release status"}
+              value={item.tvStatus ?? (item.type === "tv" && st.upcoming ? "Returning Series" : null)}
+            />
+            <InfoRow label="Added" value={new Date(item.addedAt).toISOString().slice(0, 10)} />
+          </dl>
+        </div>
+      </Sheet>
     </div>
   );
 }

@@ -61,10 +61,6 @@ export default function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
-  const [infoClosing, setInfoClosing] = useState(false);
-  const infoOpenRef = useRef(infoOpen);
-  const infoAnimated = useRef(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
   const searchInput = useRef<HTMLInputElement | null>(null);
 
@@ -100,46 +96,21 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    infoOpenRef.current = infoOpen;
-  }, [infoOpen]);
-
-  const cancelCloseTimer = useCallback(() => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }, []);
-
   // ---- detail view lives on the history stack so system back / edge swipe closes it
-  const open = useCallback(
-    (id: string, preview?: Item) => {
-      window.history.pushState({ detail: id, preview }, "");
-      setDetailId(id);
-      setPreviewItem(preview ?? null);
-      cancelCloseTimer();
-      infoAnimated.current = false;
-      setInfoClosing(false);
-      setInfoOpen(false);
-    },
-    [cancelCloseTimer],
-  );
+  const open = useCallback((id: string, preview?: Item) => {
+    window.history.pushState({ detail: id, preview }, "");
+    setDetailId(id);
+    setPreviewItem(preview ?? null);
+    setInfoOpen(false);
+  }, []);
   // The info sheet is a history entry too: the first system back closes the
-  // sheet, the second closes the detail view.
+  // sheet, the second closes the detail view. The Sheet starts its own exit on
+  // the same tick; no parent timer to drift out of sync with the animation.
   const openInfo = useCallback(() => {
     if (!detailId || infoOpen) return;
-    cancelCloseTimer();
-    infoAnimated.current = false;
-    setInfoClosing(false);
     window.history.pushState({ detail: detailId, preview: previewItem, info: true }, "");
     setInfoOpen(true);
-  }, [detailId, previewItem, infoOpen, cancelCloseTimer]);
-  // Called once the sheet has already played its roll-down animation.
-  const dismissInfo = useCallback(() => {
-    infoAnimated.current = true;
-    if (window.history.state?.info) window.history.back();
-    else setInfoOpen(false);
-  }, []);
+  }, [detailId, previewItem, infoOpen]);
   const closeInfo = useCallback(() => {
     if (window.history.state?.info) window.history.back();
     else setInfoOpen(false);
@@ -169,30 +140,13 @@ export default function App() {
   useEffect(() => {
     const onPop = () => {
       const state = window.history.state as { detail?: string; preview?: Item; info?: boolean } | null;
-      const nowInfo = !!state?.info;
       setDetailId(state?.detail ?? null);
       setPreviewItem(state?.preview ?? null);
-      // A system back / edge swipe has no in-sheet animation, so keep the sheet
-      // mounted just long enough for it to roll down before unmounting.
-      if (infoOpenRef.current && !nowInfo && !infoAnimated.current) {
-        const ms = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 160;
-        cancelCloseTimer();
-        setInfoClosing(true);
-        closeTimer.current = setTimeout(() => {
-          setInfoOpen(false);
-          setInfoClosing(false);
-          closeTimer.current = null;
-        }, ms);
-      } else {
-        cancelCloseTimer();
-        setInfoClosing(false);
-        setInfoOpen(nowInfo);
-        infoAnimated.current = false;
-      }
+      setInfoOpen(!!state?.info);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [cancelCloseTimer]);
+  }, []);
 
   const detail = detailId ? items.find((i) => i.id === detailId) ?? (previewItem?.id === detailId ? previewItem : undefined) : undefined;
   useEffect(() => {
@@ -225,6 +179,7 @@ export default function App() {
       <main
         className="mx-auto min-h-dvh max-w-xl pb-[calc(env(safe-area-inset-bottom)+96px)]"
         aria-hidden={!!detail}
+        inert={!!detail}
         onPointerDown={(e) => {
           const el = e.target as HTMLElement;
           if (el.closest("[data-swipe],input,textarea")) {
@@ -257,6 +212,8 @@ export default function App() {
 
       <nav
         aria-label="Main"
+        aria-hidden={!!detail}
+        inert={!!detail}
         className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-2 pb-[calc(env(safe-area-inset-bottom)+10px)]"
       >
         <ul className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-line bg-raised/80 p-1.5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl">
@@ -294,9 +251,8 @@ export default function App() {
           item={detail}
           data={eps[detail.id]}
           infoOpen={infoOpen}
-          infoClosing={infoClosing}
           onOpenInfo={openInfo}
-          onCloseInfo={dismissInfo}
+          onCloseInfo={closeInfo}
           onClose={close}
           onUntrack={untrack}
         />

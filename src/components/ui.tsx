@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { haptic } from "@/lib/toast";
 
 type IconProps = { className?: string };
@@ -62,6 +63,11 @@ export const IconCheck = ({ className }: IconProps) => (
 export const IconBack = ({ className }: IconProps) => (
   <svg {...base} className={className}>
     <path d="m15 5-7 7 7 7" />
+  </svg>
+);
+export const IconClose = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 );
 export const IconDownload = ({ className }: IconProps) => (
@@ -253,146 +259,468 @@ export function SwipeRow({
   );
 }
 
+const SHEET_EASE = "cubic-bezier(0.32, 0.72, 0, 1)"; // keep in sync with --ease-sheet in globals.css
+const SHEET_OPEN_MS = 260; // keep in sync with .anim-sheet in globals.css
+const SHEET_CLOSE_MS = 200;
+const SHEET_SNAP_MS = 200;
+const SHEET_CLOSE_VELOCITY = 0.35; // px/ms downward — a flick, not a slow drag
+const SHEET_SCROLL_LOCK_MS = 120; // don't turn the end of a scroll into a dismiss
+
+type SheetPhase = "closed" | "opening" | "open" | "closing";
+
+function reducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Current translateY of an element, including an in-flight CSS animation. */
+function translateY(el: HTMLElement) {
+  const transform = getComputedStyle(el).transform;
+  if (!transform || transform === "none") return 0;
+  try {
+    return new DOMMatrixReadOnly(transform).m42;
+  } catch {
+    return 0;
+  }
+}
+
+type SheetDrag = {
+  id: number;
+  startX: number;
+  startY: number;
+  baseY: number;
+  active: boolean;
+  points: { y: number; t: number }[];
+};
+
+export type SheetProps = {
+  open: boolean;
+  /** Must set `open` to false (or pop the matching history entry). */
+  onClose: () => void;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+  maxHeight?: string;
+};
+
 /**
- * Bottom sheet for supplementary content. Grab anywhere and drag down to
- * dismiss; the panel rolls fully off-screen before it unmounts.
+ * Reusable modal bottom sheet. The parent owns `open` and (in the detail view)
+ * the history entry; this component owns the enter/exit motion, drag-to-dismiss,
+ * scrim fade, focus trap and the close button.
+ *
+ * Dismissal starts the exit immediately; the parent's `onClose` runs in the
+ * same tick, so history and the closing animation never drift apart. A drag is
+ * only picked up from the sheet chrome, or from content that is scrolled to the
+ * top, so it can never swallow a downward content scroll.
+ *
+ * Keep the exit path in one place (here) rather than adding timers in parents.
  */
-export function Sheet({ title, onClose, closing = false, children }: { title: string; onClose: () => void; closing?: boolean; children: ReactNode }) {
+export function Sheet({ open, onClose, title, subtitle, children, footer, maxHeight = "78dvh" }: SheetProps) {
+  const [rendered, setRendered] = useState(open);
   const panel = useRef<HTMLDivElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: number; y: number; dy: number; dragging: boolean } | null>(null);
-  const closingRef = useRef(false);
-  const onCloseRef = useRef(onClose);
+  const scroll = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const subtitleId = useId();
+  const phase = useRef<SheetPhase>(open ? "opening" : "closed");
+  const drag = useRef<SheetDrag | null>(null);
+  const lastScrollAt = useRef(0);
+  const suppressClick = useRef(false);
+  const suppressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelAnim = useRef<Animation | null>(null);
+  const backdropAnim = useRef<Animation | null>(null);
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  const animateOut = useCallback(() => {
-    if (closingRef.current) return undefined;
-    closingRef.current = true;
-    const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const ms = reduced ? 0 : 160;
+  useEffect(
+    () => () => {
+      panelAnim.current?.cancel();
+      backdropAnim.current?.cancel();
+      if (suppressTimer.current) clearTimeout(suppressTimer.current);
+    },
+    [],
+  );
+
+  /** Stop the CSS entrance in place and hand its current offset back. */
+  const stopIntro = useCallback(() => {
     const p = panel.current;
+    let y = 0;
     if (p) {
-      p.style.transition = `transform ${ms}ms ease-in`;
-      p.style.transform = `translate3d(0,${p.offsetHeight}px,0)`;
+      y = translateY(p);
+      if (p.classList.contains("anim-sheet")) {
+        p.classList.remove("anim-sheet");
+        p.style.transform = y ? `translate3d(0,${y}px,0)` : "";
+      }
     }
-    if (backdrop.current) {
-      backdrop.current.style.transition = `opacity ${ms}ms ease-in`;
-      backdrop.current.style.opacity = "0";
+    const b = backdrop.current;
+    if (b && b.classList.contains("anim-fade")) {
+      const opacity = Number.parseFloat(getComputedStyle(b).opacity);
+      b.classList.remove("anim-fade");
+      b.style.opacity = Number.isFinite(opacity) ? String(opacity) : "1";
     }
-    return ms;
+    return y;
   }, []);
 
-  const closeAnimated = useCallback(() => {
-    const ms = animateOut();
-    if (ms !== undefined) setTimeout(() => onCloseRef.current(), ms);
-  }, [animateOut]);
+  const animatePanel = useCallback((from: number, to: number, ms: number, done?: () => void) => {
+    const el = panel.current;
+    if (!el) return;
+    panelAnim.current?.cancel();
+    panelAnim.current = null;
+    if (ms <= 0) {
+      el.style.transform = to ? `translate3d(0,${to}px,0)` : "";
+      done?.();
+      return;
+    }
+    const anim = el.animate(
+      [
+        { transform: `translate3d(0,${from}px,0)` },
+        { transform: to ? `translate3d(0,${to}px,0)` : "translate3d(0,0,0)" },
+      ],
+      { duration: ms, easing: SHEET_EASE, fill: "both" },
+    );
+    panelAnim.current = anim;
+    anim.onfinish = () => {
+      if (panelAnim.current === anim) panelAnim.current = null;
+      el.style.transform = to ? `translate3d(0,${to}px,0)` : "";
+      anim.cancel();
+      done?.();
+    };
+  }, []);
+
+  const animateBackdrop = useCallback((to: number, ms: number) => {
+    const el = backdrop.current;
+    if (!el) return;
+    backdropAnim.current?.cancel();
+    backdropAnim.current = null;
+    const current = Number.parseFloat(getComputedStyle(el).opacity);
+    if (ms <= 0) {
+      el.style.opacity = String(to);
+      return;
+    }
+    const anim = el.animate([{ opacity: Number.isFinite(current) ? current : to }, { opacity: to }], {
+      duration: ms,
+      easing: SHEET_EASE,
+      fill: "both",
+    });
+    backdropAnim.current = anim;
+    anim.onfinish = () => {
+      if (backdropAnim.current === anim) backdropAnim.current = null;
+      el.style.opacity = String(to);
+      anim.cancel();
+    };
+  }, []);
+
+  const beginClose = useCallback(
+    (notify: boolean) => {
+      if (phase.current === "closing" || phase.current === "closed") return;
+      const el = panel.current;
+      if (!el) {
+        phase.current = "closed";
+        setRendered(false);
+        return;
+      }
+      phase.current = "closing";
+      stopIntro();
+      const from = translateY(el);
+      const ms = reducedMotion() ? 0 : SHEET_CLOSE_MS;
+      animatePanel(from, el.offsetHeight, ms, () => {
+        phase.current = "closed";
+        setRendered(false);
+      });
+      animateBackdrop(0, ms);
+      if (notify) onCloseRef.current();
+    },
+    [animateBackdrop, animatePanel, stopIntro],
+  );
+
+  const beginOpen = useCallback(() => {
+    if (phase.current === "opening" || phase.current === "open") return;
+    if (!panel.current || phase.current === "closed") {
+      phase.current = "opening";
+      setRendered(true);
+      return;
+    }
+    phase.current = "opening";
+    stopIntro();
+    const from = translateY(panel.current);
+    const ms = reducedMotion() ? 0 : SHEET_OPEN_MS;
+    animatePanel(from, 0, ms, () => {
+      if (phase.current === "opening") phase.current = "open";
+    });
+    animateBackdrop(1, ms);
+  }, [animateBackdrop, animatePanel, stopIntro]);
 
   useEffect(() => {
-    if (closing) animateOut();
-  }, [closing, animateOut]);
+    if (open) beginOpen();
+    else beginClose(false);
+  }, [open, beginOpen, beginClose]);
 
   useEffect(() => {
+    if (!rendered) return;
     const previous = document.activeElement as HTMLElement | null;
-    panel.current?.focus();
+    const bodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panel.current?.focus({ preventScroll: true });
+
+    const focusables = () => {
+      const el = panel.current;
+      if (!el) return [] as HTMLElement[];
+      return Array.from(
+        el.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((node) => node.getClientRects().length > 0);
+    };
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (phase.current === "closing" || phase.current === "closed") return;
+        e.preventDefault();
         e.stopPropagation();
-        closeAnimated();
+        beginClose(true);
         return;
       }
-      if (e.key !== "Tab" || !panel.current) return;
-      const focusable = Array.from(
-        panel.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
-      ).filter((el) => el.getClientRects().length > 0);
-      if (!focusable.length) {
+      if (e.key !== "Tab") return;
+      const list = focusables();
+      if (!list.length) {
         e.preventDefault();
         return;
       }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      const first = list[0];
+      const last = list[list.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === panel.current)) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
+      } else if (!e.shiftKey && active === last) {
         e.preventDefault();
         first.focus();
       }
     };
+
+    // A modal sheet owns focus; a stray programmatic focus must come back.
+    const onFocusIn = (e: FocusEvent) => {
+      if (phase.current === "closing" || phase.current === "closed") return;
+      const el = panel.current;
+      if (el && !el.contains(e.target as Node)) el.focus({ preventScroll: true });
+    };
+
     window.addEventListener("keydown", onKey);
+    document.addEventListener("focusin", onFocusIn);
     return () => {
       window.removeEventListener("keydown", onKey);
-      previous?.focus();
+      document.removeEventListener("focusin", onFocusIn);
+      document.body.style.overflow = bodyOverflow;
+      if (previous && document.contains(previous)) previous.focus({ preventScroll: true });
     };
-  }, [closeAnimated]);
+  }, [rendered, beginClose]);
 
-  const snapBack = () => {
-    if (!panel.current) return;
-    panel.current.style.transition = "transform 180ms ease-out";
-    panel.current.style.transform = "";
+  // A touch pan on a scroll container is owned by the browser: without this,
+  // the browser starts scrolling and fires pointercancel before the drag can
+  // activate. Preventing the default only for a downward gesture that starts
+  // at the top keeps native scrolling everywhere else.
+  useEffect(() => {
+    if (!rendered) return;
+    const el = panel.current;
+    if (!el) return;
+    let start: { x: number; y: number; inScroller: boolean; interactive: boolean } | null = null;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) {
+        start = null;
+        return;
+      }
+      const touch = e.touches[0];
+      const target = e.target as HTMLElement;
+      start = {
+        x: touch.clientX,
+        y: touch.clientY,
+        inScroller: !!scroll.current?.contains(target),
+        interactive: !!target.closest(
+          "button, a, input, textarea, select, [contenteditable='true'], [role='slider'], [role='switch']",
+        ),
+      };
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!start || e.touches.length !== 1 || !start.inScroller || start.interactive) return;
+      if (!drag.current) return;
+      const scroller = scroll.current;
+      if (!scroller || scroller.scrollTop > 0) return;
+      const touch = e.touches[0];
+      const dy = touch.clientY - start.y;
+      const dx = touch.clientX - start.x;
+      if (dy > 6 && Math.abs(dy) > Math.abs(dx)) e.preventDefault();
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [rendered]);
+
+  const onDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (phase.current !== "open" && phase.current !== "opening") return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, select, [contenteditable='true'], [role='slider'], [role='switch']")) return;
+    const scroller = scroll.current;
+    if (scroller?.contains(target)) {
+      // Content that is scrolled down owns the gesture. Never steal it: that
+      // was the bug that made the sheet impossible to scroll back up.
+      if (scroller.scrollTop > 0) return;
+      if (performance.now() - lastScrollAt.current < SHEET_SCROLL_LOCK_MS) return;
+    }
+    drag.current = { id: e.pointerId, startX: e.clientX, startY: e.clientY, baseY: 0, active: false, points: [] };
   };
 
-  const finishDrag = (cancelled = false) => {
+  const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
-    drag.current = null;
-    if (!d) return;
-    if (cancelled) snapBack();
-    else if (d.dragging && d.dy > 72) {
-      haptic();
-      closeAnimated();
-    } else snapBack();
+    const el = panel.current;
+    if (!d || !el || d.id !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.active) {
+      if (Math.abs(dy) < 8) return;
+      // Horizontal or upward means the content, not the sheet.
+      if (Math.abs(dx) > Math.abs(dy) * 1.2 || dy < 0) {
+        drag.current = null;
+        return;
+      }
+      d.active = true;
+      d.baseY = stopIntro();
+      if (phase.current === "opening") phase.current = "open";
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // The pointer can already be gone on a fast flick.
+      }
+    }
+    e.preventDefault();
+    const y = Math.max(0, d.baseY + dy);
+    el.style.transform = `translate3d(0,${y}px,0)`;
+    const height = el.offsetHeight || 1;
+    if (backdrop.current) backdrop.current.style.opacity = String(Math.max(0, 1 - y / height));
+    const now = performance.now();
+    d.points.push({ y, t: now });
+    while (d.points.length > 2 && now - d.points[0].t > 120) d.points.shift();
   };
 
-  return (
-    <div data-swipe className="fixed inset-0 z-[45]" onPointerDown={(e) => e.stopPropagation()}>
-      <div ref={backdrop} aria-hidden className="absolute inset-0 touch-none bg-black/70" onClick={closeAnimated} />
+  const snapBack = (from: number) => {
+    const ms = reducedMotion() ? 0 : SHEET_SNAP_MS;
+    animatePanel(from, 0, ms);
+    animateBackdrop(1, ms);
+  };
+
+  const finishDrag = (e: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    drag.current = null;
+    if (!d.active) return;
+    const el = panel.current;
+    const y = el ? translateY(el) : 0;
+    if (cancelled) {
+      snapBack(y);
+      return;
+    }
+    e.preventDefault();
+    const now = performance.now();
+    const last = d.points[d.points.length - 1];
+    const first = d.points.find((p) => now - p.t <= 120) ?? d.points[0];
+    let velocity = 0;
+    if (last && first && now - last.t <= 100) {
+      const dt = last.t - first.t;
+      if (dt > 0) velocity = Math.max(0, Math.min(3, (last.y - first.y) / dt));
+    }
+    const height = el?.offsetHeight || 1;
+    // Distance OR speed. A short fast flick should dismiss; a slow quarter
+    // drag should too. A fixed 72 px threshold felt sticky and accidental.
+    const threshold = Math.min(Math.max(height * 0.25, 64), 180);
+    if (y > threshold || velocity > SHEET_CLOSE_VELOCITY) {
+      haptic();
+      beginClose(true);
+    } else {
+      snapBack(y);
+    }
+    suppressClick.current = true;
+    if (suppressTimer.current) clearTimeout(suppressTimer.current);
+    suppressTimer.current = setTimeout(() => {
+      suppressClick.current = false;
+      suppressTimer.current = null;
+    }, 350);
+  };
+
+  if (!rendered || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[45]">
+      <div
+        ref={backdrop}
+        aria-hidden
+        onClick={() => {
+          if (suppressClick.current) return;
+          beginClose(true);
+        }}
+        className="anim-fade absolute inset-0 touch-none bg-black/70"
+      />
       <div
         ref={panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={subtitle ? subtitleId : undefined}
         tabIndex={-1}
-        onPointerDown={(e) => {
-          if (closingRef.current) return;
-          if (e.pointerType === "mouse" && e.button !== 0) return;
-          if ((e.target as HTMLElement).closest("button")) return;
-          drag.current = { id: e.pointerId, y: e.clientY, dy: 0, dragging: false };
+        onAnimationEnd={(e) => {
+          if (e.target === panel.current && phase.current === "opening") phase.current = "open";
         }}
-        onPointerMove={(e) => {
-          const d = drag.current;
-          if (!d || d.id !== e.pointerId) return;
-          const delta = e.clientY - d.y;
-          // Downward only: upward drags belong to the scrollable content.
-          if (!d.dragging) {
-            if (delta <= 8) return;
-            d.dragging = true;
-            e.currentTarget.setPointerCapture(e.pointerId);
-            if (panel.current) panel.current.style.transition = "none";
-          }
-          d.dy = Math.max(0, Math.min(600, delta));
-          if (panel.current) panel.current.style.transform = `translate3d(0,${d.dy}px,0)`;
-          e.preventDefault();
-        }}
-        onPointerUp={() => finishDrag()}
-        onPointerCancel={() => finishDrag(true)}
-        className="anim-sheet absolute inset-x-0 bottom-0 mx-auto max-w-xl select-none overflow-hidden rounded-t-2xl border-t border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+16px)]"
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={(e) => finishDrag(e)}
+        onPointerCancel={(e) => finishDrag(e, true)}
+        className="anim-sheet outline-none absolute inset-x-0 bottom-0 mx-auto flex max-w-xl flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]"
+        style={{ maxHeight }}
       >
-        <div className="touch-none px-4 pb-2 pt-3">
+        <div className="shrink-0 cursor-grab touch-none px-3 pt-2.5 active:cursor-grabbing">
           <div aria-hidden className="mx-auto h-1 w-10 rounded-full bg-line" />
-          <div className="mt-3 min-w-0">
-            <h2 id={titleId} className="text-[15px] font-medium">
-              Details
-            </h2>
-            <p className="truncate text-xs text-dim">{title}</p>
+          <div className="mt-1 flex items-start gap-2 px-1 pb-2">
+            <div className="min-w-0 flex-1 pt-1.5">
+              <h2 id={titleId} className="truncate text-[16px] font-semibold leading-tight">
+                {title}
+              </h2>
+              {subtitle ? (
+                <p id={subtitleId} className="mt-0.5 truncate text-xs text-dim">
+                  {subtitle}
+                </p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => beginClose(true)}
+              aria-label="Close"
+              className="-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
+            >
+              <IconClose className="h-5 w-5" />
+            </button>
           </div>
         </div>
-        <div data-sheet-scroll className="max-h-[68vh] touch-pan-y overflow-y-auto overscroll-contain">
+        <div
+          ref={scroll}
+          data-sheet-scroll
+          onScroll={() => {
+            lastScrollAt.current = performance.now();
+          }}
+          className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain"
+        >
           {children}
         </div>
+        {footer ? <div className="shrink-0 touch-none border-t border-line/70 px-4 py-3">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

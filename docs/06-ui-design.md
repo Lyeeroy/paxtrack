@@ -28,9 +28,9 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 | Tap twice | Remove button | Confirm removal |
 | Tap active status | Detail status buttons | Remove from library (toast; detail stays open, pick a status to re-add). With watched progress, the first tap arms a 3 s confirmation instead |
 | Tap poster or title | Detail hero | Open the info bottom sheet |
-| Drag down (72 px) | Info sheet handle | Dismiss the info sheet |
+| Drag down | Info sheet chrome, or content at the top | Dismiss the info sheet (25% of panel or a fast flick) |
 
-- The threshold is 72 px (70 px for tab and edge swipes). Drag transforms are written straight to the DOM with no React re-render so it stays at 60 fps on budget phones; `haptic()` fires on completion.
+- The threshold is 72 px (70 px for tab and edge swipes). The sheet has its own proportional threshold: 25% of the panel height, clamped to 64–180 px, or a downward flick over 0.35 px/ms. Drag transforms are written straight to the DOM with no React re-render so it stays at 60 fps on budget phones; `haptic()` fires on completion.
 - A revealed action is always mirrored by a tap control (the `+` button, status buttons, the back button). **Gestures accelerate; they never gate.** Every gesture must have a non-gesture path.
 - Rows inside swipe containers keep `data-swipe` so the screen-level tab swipe ignores them; inputs and textareas are excluded the same way.
 
@@ -42,7 +42,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 - Episode data and metadata load in the background and fill in; "Loading episodes…" never blocks the rest of the screen.
 - Search debounces 350 ms, caches results in memory, shows trending when empty, and discards stale responses with a sequence id.
 - Small accelerations add up: the last library filter is remembered across tab switches, undo toasts reverse mistakes without leaving the screen, and the `+` button marks the next episode without opening Detail.
-- Transitions are 160 ms. Anything longer feels sluggish on a phone.
+- Transitions are 160 ms. Anything longer feels sluggish on a phone. The bottom sheet is the one exception (260 ms in, 200 ms out) because it is a physical surface; see [ADR 0007](./decisions/0007-sheet-interaction-contract.md).
 
 ### Priority rule
 
@@ -53,7 +53,7 @@ When adding a feature, ask **how many taps, and how long until it responds?** If
 - **Black first.** The base is pure `#000`, which switches off pixels on OLED displays and saves battery. This is stated in the comment at the top of `src/app/globals.css` — do not lighten it casually.
 - **One accent.** Green (`#4ade80`) is used for active states, primary actions and positive feedback. Amber (`#fbbf24`) means "undo/clear", red (`#f87171`) means destructive. Nothing else competes.
 - **Dense but calm.** Information is packed into short rows with generous horizontal padding and minimal vertical padding. Secondary text recedes via the `dim`/`faint` greys instead of borders or boxes.
-- **Fast even on cheap phones.** System font only (no webfont), `content-visibility: auto` on rows (`.cv`), direct DOM writes during swipes, and short 160 ms animations.
+- **Fast even on cheap phones.** System font only (no webfont), `content-visibility: auto` on rows (`.cv`), direct DOM writes during swipes, and short 160 ms animations (260 ms only for the sheet's entrance).
 
 ## Colour and type tokens
 
@@ -108,20 +108,21 @@ Reuse these before creating anything new:
 - **Episode row** — `min-h-[52px]`, episode number `w-8 text-xs tabular-nums text-faint`, name `text-[14px]`, air date `text-[11px] text-faint`, and a 24 px round checkbox that is `border-accent bg-accent text-black` when watched. Unaired episodes are `opacity-50`.
 - **Empty state** — `px-8 py-20 text-center`, `text-[15px] text-dim` title and `text-xs text-faint` hint.
 - **Destructive action** — starts as `text-faint`, becomes `bg-danger/15 text-danger` only after the second tap (3 s window). Other buttons do not use danger styling. Removing via the active status button with watched progress is a stronger case: the first tap arms a 3 s confirmation, shows a `text-danger` line naming what will be deleted (watch history, with the episode count) and switches that button to "Tap again" instead of removing immediately.
-- **Info sheet** (`Sheet` in `ui.tsx`) — the one deliberate modal exception ([ADR 0006](./decisions/0006-info-bottom-sheet.md)), opened by tapping the detail hero poster or title. Backdrop `bg-black/70`, panel `rounded-t-2xl bg-surface` pinned bottom with safe-area padding, `z-[45]` (above Detail, below toasts), grab handle, `max-h-[68vh]` scroll area that keeps native scrolling. Local facts render immediately; TMDB extras fill in without blocking. Drag **anywhere on the sheet** downward (upward drags scroll the content) with a 72 px threshold; backdrop tap and Escape also dismiss. On close the panel animates fully off-screen over 160 ms rather than vanishing. It sits on the history stack so the first back closes the sheet. Reuse `Sheet` rather than creating another modal.
+- **Info sheet** (`Sheet` in `ui.tsx`) — the one deliberate modal exception ([ADR 0006](./decisions/0006-info-bottom-sheet.md), interaction contract in [ADR 0007](./decisions/0007-sheet-interaction-contract.md)), opened by tapping the detail hero poster or title. It is self-contained: the parent owns `open` and the history entry; `Sheet` owns the enter/exit motion, drag, scrim fade, focus trap and close button. Portal to `document.body`, backdrop `bg-black/70`, panel `rounded-t-2xl bg-surface` pinned bottom with safe-area padding, `z-[45]` (above Detail, below toasts), grab handle, title/subtitle header, 44×44 close button, optional footer, and a `max-h-[78dvh]` scroll area that keeps native scrolling. Local facts render immediately; TMDB extras fill in without blocking. Drag down from the header, or from content only when it is scrolled to the top; dismiss at 25% of the panel height (clamped 64–180 px) or a downward flick over 0.35 px/ms. Backdrop tap, close button, Escape and system back also dismiss. Exit starts on the same tick as the close (200 ms roll-down) so the history entry and animation cannot drift; no parent timers. Reuse `Sheet` rather than creating another modal.
 - **Swipe affordances** — revealed backgrounds are `bg-accent/15 text-accent` on the right ("mark") and `bg-warn/15 text-warn` on the left ("undo/clear"), with labels at `text-sm font-medium`. Threshold is 72 px.
 
 ## Motion and feedback
 
 - `anim-up` (fade + 8 px rise) for tab content and toasts; `anim-slide` (24 px slide + fade) for the detail view. Both 160 ms `ease-out`.
+- The bottom sheet is the deliberate motion exception: 260 ms in, 200 ms out/snap, `cubic-bezier(0.32, 0.72, 0, 1)` (`--ease-sheet`). It settles like a physical surface instead of snapping like an in-page transition. Keep `SHEET_*` in `ui.tsx` in sync with `--ease-sheet`/`.anim-sheet` in `globals.css`.
 - Tab colour/transform transitions: 200 ms. Active tab label expansion: 300 ms. Progress bar: 300 ms.
 - Press feedback is `active:scale-95` on chips/tabs and `active:bg-surface`/`active:opacity-80` elsewhere, plus optional haptics via `haptic()`.
-- `prefers-reduced-motion` collapses all animations/transitions to 1 ms in `globals.css` — keep any new motion inside that rule.
+- `prefers-reduced-motion` collapses all animations/transitions to 1 ms in `globals.css` — keep any new motion inside that rule. `Sheet` also checks the media query in JS and uses 0 ms for its WAAPI exit/snap.
 - Focus is a 2 px accent outline with 2 px offset (`:focus-visible`). Never remove it without a visible replacement.
 
 ## Accessibility is part of the style
 
-The accessible markup is not an add-on; it is how these components are built. Keep: `aria-label` on icon-only buttons, `aria-current` on the active tab, `role="tablist"`/`tab"` where used, `aria-pressed` on episode toggles, `aria-checked` on status radios, `aria-live` for sync status and toasts, `role="dialog"` on the detail view, and `role="progressbar"` with aria values. Content is `aria-hidden` while the detail view is open. The app also respects safe-area insets and `prefers-reduced-motion`.
+The accessible markup is not an add-on; it is how these components are built. Keep: `aria-label` on icon-only buttons, `aria-current` on the active tab, `role="tablist"`/`tab"` where used, `aria-pressed` on episode toggles, `aria-checked` on status radios, `aria-live` for sync status and toasts, `role="dialog"` on the detail view and the sheet, and `role="progressbar"` with aria values. Content is `aria-hidden` while the detail view is open; the detail is `aria-hidden` and the main content is `inert` while the sheet is open. The sheet moves focus in, traps Tab, restores focus on close, and always has a 44×44 close button as the non-gesture path. The app also respects safe-area insets and `prefers-reduced-motion`.
 
 ## Checklist for new UI
 
