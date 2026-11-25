@@ -42,10 +42,19 @@ const VELOCITY_WINDOW_MS = 50;
 const MIN_SAMPLE_DT_MS = 8;
 /** How long a glide interrupted by a new touch keeps influencing its release. */
 const RESIDUAL_DECAY_MS = 150;
-/** A glide never drags on; fast flicks finish sooner because they cover the
- * distance at higher speed. (No minimum: clamping the duration up would make
- * the Hermite curve reverse direction in its last frames.) */
-const MAX_GLIDE_MS = 420;
+/**
+ * Native scrollers coast with exponential friction, then snap with a spring.
+ * iOS UIScrollView's normal deceleration rate corresponds to ~325 ms; that
+ * keeps ~95% of the finger's speed in the first frame instead of braking from
+ * frame one (which is what a fixed ease-to-distance does).
+ */
+const FLING_TAU_MS = 325;
+/** Critically damped snap, expressed as a rate per millisecond. */
+const SNAP_OMEGA = 0.05;
+/** Hand off to the snap before the fling can overshoot its column. */
+const FLING_STOP_SPEED = 0.05;
+const MAX_FLING_MS = 400;
+const MAX_SNAP_MS = 380;
 
 type DragState = {
   x: number;
@@ -345,38 +354,73 @@ export default function Browse({
       Math.abs(release) >= MIN_FLICK_SPEED &&
       Math.abs(disp) >= 1
     ) {
-      // Cubic Hermite from the finger's velocity to rest, landing exactly on
-      // the target column. A fixed CSS ease cannot do this: its launch slope
-      // plus a minimum duration throws away speed on exactly the fast flicks
-      // that should feel fastest.
+      // Native scrollers coast with exponential friction first, then hand the
+      // still-live velocity to a critically damped snap. A fixed ease-to-
+      // distance brakes from frame one and reads as much slower than the finger.
       stopGlide();
       const from = d.delta;
-      const T = Math.min(MAX_GLIDE_MS, (2 * Math.abs(disp)) / Math.abs(release));
-      const c3 = (release * T - 2 * disp) / (T * T * T);
-      const c2 = (3 * disp) / (T * T) - (2 * release) / T;
       // The artwork rows are repainted by paint() every frame, so their CSS
-      // transition must be off during the glide or they lag behind the track.
+      // transition must be off during the fling or they lag behind the track.
       if (trackRef.current) trackRef.current.style.transition = "none";
       viewportRef.current?.style.setProperty("--browse-settle-ms", "0ms");
       target.current = next;
       glideV.current = release;
-      const start = performance.now();
-      const frame = (now: number) => {
-        const u = Math.min(Math.max(now - start, 0), T);
-        const p = from + release * u + c2 * u * u + c3 * u * u * u;
-        paint(p);
-        offset.current = p;
-        glideV.current = release + 2 * c2 * u + 3 * c3 * u * u;
-        if (u < T) {
-          raf.current = requestAnimationFrame(frame);
-          return;
-        }
+      const flingStart = performance.now();
+      let phase: "fling" | "spring" = "fling";
+      let phaseStart = flingStart;
+      let y0 = 0;
+      let springC = 0;
+      const finish = () => {
         raf.current = null;
         target.current = null;
         glideV.current = 0;
         settleAt(next, 0);
         viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
         setActive(next);
+      };
+      const frame = (now: number) => {
+        const u = Math.max(now - phaseStart, 0);
+        let p: number;
+        let v: number;
+        if (phase === "fling") {
+          const decay = Math.exp(-u / FLING_TAU_MS);
+          p = from + release * FLING_TAU_MS * (1 - decay);
+          v = release * decay;
+          const remaining = to - p;
+          const crossed =
+            Math.abs(p - from) > Math.abs(disp) && Math.sign(p - from) === Math.sign(disp);
+          if (
+            crossed ||
+            (remaining * v >= 0 && Math.abs(remaining) <= Math.abs(v) / SNAP_OMEGA) ||
+            Math.abs(v) < FLING_STOP_SPEED ||
+            u > MAX_FLING_MS
+          ) {
+            if (crossed) p = to;
+            phase = "spring";
+            phaseStart = now;
+            y0 = p - to;
+            // Carry the live speed, capped so the spring cannot overshoot the
+            // column when the fling hands over early.
+            const carryV = crossed
+              ? 0
+              : Math.sign(v) * Math.min(Math.abs(v), SNAP_OMEGA * Math.abs(remaining));
+            springC = carryV + SNAP_OMEGA * y0;
+            v = carryV;
+          }
+        } else {
+          const decay = Math.exp(-SNAP_OMEGA * u);
+          const envelope = y0 + springC * u;
+          p = to + envelope * decay;
+          v = (springC - SNAP_OMEGA * envelope) * decay;
+          if (u > MAX_SNAP_MS || (Math.abs(p - to) < 0.2 && Math.abs(v) < 0.02)) {
+            finish();
+            return;
+          }
+        }
+        paint(p);
+        offset.current = p;
+        glideV.current = v;
+        raf.current = requestAnimationFrame(frame);
       };
       raf.current = requestAnimationFrame(frame);
       return;
