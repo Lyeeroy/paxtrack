@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { Item, SearchResult } from "@/lib/types";
 import MediaRow from "./MediaRow";
 
@@ -17,11 +17,8 @@ const SHELVES: { key: Category; label: string; hint: string }[] = [
 /** Accumulated results per category, reused when the user returns to the Search tab. */
 const cache = new Map<Category, SearchResult[]>();
 
-/** Column gap and artwork travel; the gap must match the column margin in the markup. */
+/** Column gap; must match the column margin in the markup. */
 const GAP = 10;
-const ART_SHIFT = 14;
-// Hoisted so memoized rows don't see a new style object on every parent render.
-const ART_STYLE: CSSProperties = { transform: "translate3d(var(--px, 0px), 0, 0)" };
 
 /**
  * Fixed settle for the dots' tap jump and for releases with no flick velocity:
@@ -166,19 +163,13 @@ export default function Browse({
 
   const step = () => (colRefs.current[0]?.offsetWidth ?? 0) + GAP;
 
-  // Column position and artwork offset are written straight to the DOM: no
-  // React re-render per pointer move. delta is the live finger displacement.
+  // Column position is written straight to the DOM: no React re-render per
+  // pointer move. delta is the live finger displacement.
   const paintAt = (index: number, delta = 0) => {
     const track = trackRef.current;
     if (!track) return;
     const s = step();
     track.style.transform = `translate3d(${(-index * s + delta).toFixed(1)}px, 0, 0)`;
-    for (let i = 0; i < SHELVES.length; i++) {
-      const col = colRefs.current[i];
-      if (!col) continue;
-      const pos = Math.max(-1, Math.min(1, i - index - delta / (s || 1)));
-      col.style.setProperty("--px", `${(pos * ART_SHIFT).toFixed(1)}px`);
-    }
   };
   const paint = (delta = 0) => paintAt(base.current, delta);
 
@@ -215,7 +206,6 @@ export default function Browse({
     const delta = offset.current + (next - base.current) * step();
     settleAt(next, delta);
     setActive(next);
-    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     return v;
   };
 
@@ -310,7 +300,6 @@ export default function Browse({
     if (!d || overscrolled.current) {
       interruptGlide();
       if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
-      viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
       settleAt(base.current, 0);
       return;
     }
@@ -359,10 +348,7 @@ export default function Browse({
       // distance brakes from frame one and reads as much slower than the finger.
       stopGlide();
       const from = d.delta;
-      // The artwork rows are repainted by paint() every frame, so their CSS
-      // transition must be off during the fling or they lag behind the track.
       if (trackRef.current) trackRef.current.style.transition = "none";
-      viewportRef.current?.style.setProperty("--browse-settle-ms", "0ms");
       target.current = next;
       glideV.current = release;
       const flingStart = performance.now();
@@ -375,7 +361,6 @@ export default function Browse({
         target.current = null;
         glideV.current = 0;
         settleAt(next, 0);
-        viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
         setActive(next);
       };
       const frame = (now: number) => {
@@ -430,7 +415,6 @@ export default function Browse({
     // settle so a stopped finger still moves a page but never glides.
     stopGlide();
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
-    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     settleAt(next, 0);
     setActive(next);
   };
@@ -442,7 +426,6 @@ export default function Browse({
     suppressClick.current = false;
     viewportRef.current?.setAttribute("data-dragging", "false");
     // No release speed on a cancelled gesture: fall back to the fixed settle.
-    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
     settleAt(base.current, 0);
   };
@@ -450,7 +433,6 @@ export default function Browse({
   // Dots are the tap fallback: use the fixed settle, not an in-flight glide.
   const jumpTo = (index: number) => {
     interruptGlide();
-    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
     settleAt(index, 0);
     setActive(index);
@@ -515,8 +497,6 @@ export default function Browse({
                         result={r}
                         have={tracked.get(id)}
                         onOpen={openFromRow}
-                        className="browse-art"
-                        style={ART_STYLE}
                       />
                     );
                   })
