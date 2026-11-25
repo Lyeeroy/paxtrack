@@ -26,11 +26,26 @@ const ART_STYLE: CSSProperties = { transform: "translate3d(var(--px, 0px), 0, 0)
 /**
  * Settle animation for the dots' tap jump: ~400 ms with a gentle ease-out, the
  * way other apps settle a horizontal pager. The app-wide 160 ms tab snap read as
- * an instant jump. Drag releases use the same curve, with the duration scaled by
- * travel.
+ * an instant jump. Drag releases use the same curve and size their own duration
+ * from the release speed (see endDrag).
  */
 const SNAP_EASE = "cubic-bezier(0.25, 0.46, 0.45, 0.94)";
 const SNAP_TRANSITION = `400ms ${SNAP_EASE}`;
+/**
+ * Every ease-out starts faster than its average speed. For this curve the launch
+ * slope is y1 / x1 = 0.46 / 0.25 = 1.84, which is used to size a settle so its
+ * first frame moves at the finger's release speed instead of jerking away from
+ * it. That velocity handoff — not the curve alone — is what makes a pager feel
+ * like a native scroll view: swipe speed and snap speed are the same number.
+ */
+const SNAP_LAUNCH_SLOPE = 1.84;
+/** Outside this window a settle reads either as a jump or as a slow glide. */
+const MIN_SNAP_MS = 200;
+const MAX_SNAP_MS = 440;
+/** A finger that came to rest before release still needs a settle that starts moving. */
+const MIN_SETTLE_SPEED = 0.55; // px/ms
+/** Sparse pointer samples can report absurd speeds; keep the settle sane. */
+const MAX_RELEASE_SPEED = 4; // px/ms
 /**
  * A flick is projected forward by its release velocity, the way UIScrollView
  * predicts its resting offset before a pager snaps to a page. On release the
@@ -39,9 +54,6 @@ const SNAP_TRANSITION = `400ms ${SNAP_EASE}`;
  * saturates.
  */
 const MOMENTUM_MS = 220;
-const MIN_SNAP_MS = 180;
-const MAX_SNAP_MS = 320;
-const SNAP_SPEED = 1.6; // px per ms; snap duration = travel / this, clamped
 /** Velocity comes from the last 100 ms only, so an earlier fast swipe can't leak in. */
 const VELOCITY_WINDOW_MS = 100;
 /** A pause this long before release means the finger came to rest — no momentum. */
@@ -61,7 +73,9 @@ function releaseVelocity(samples: { x: number; t: number }[], releaseT: number):
   if (releaseT - last.t > HOLD_MS) return 0;
   const first = samples[0];
   const dt = last.t - first.t;
-  return dt > 0 ? (last.x - first.x) / dt : 0;
+  if (dt <= 0) return 0;
+  const v = (last.x - first.x) / dt;
+  return Math.max(-MAX_RELEASE_SPEED, Math.min(MAX_RELEASE_SPEED, v));
 }
 
 export default function Browse({
@@ -207,11 +221,12 @@ export default function Browse({
       return;
     }
     const s = step();
+    const release = releaseVelocity(d.samples, e.timeStamp);
     // Project where the flick would coast to, then pick the nearest column. The
     // momentum part is capped to one column so a fast release advances one step
     // instead of slamming several columns away; the finger's own displacement is
     // not capped, so a deliberate multi-column drag can still cross several.
-    const rawProjected = releaseVelocity(d.samples, e.timeStamp) * MOMENTUM_MS;
+    const rawProjected = release * MOMENTUM_MS;
     const projected = s > 0 ? Math.max(-s, Math.min(s, rawProjected)) : 0;
     let columns = s > 0 ? Math.round(-(d.delta + projected) / s) : 0;
     // A deliberate drag past the old distance threshold moves one column even
@@ -220,13 +235,22 @@ export default function Browse({
       columns = d.delta < 0 ? 1 : -1;
     }
     const next = Math.max(0, Math.min(SHELVES.length - 1, active + columns));
-    // Travel length sets the duration, so a multi-column flick moves at roughly
-    // the same speed as a short snap instead of teleporting to the target.
     const travel = Math.abs((active - next) * s - d.delta);
-    const duration = Math.max(MIN_SNAP_MS, Math.min(MAX_SNAP_MS, Math.round(travel / SNAP_SPEED)));
+    // duration = launchSlope * travel / speed keeps the first animated frame at
+    // the finger's release speed, so there is no visible acceleration at the
+    // moment of release; the curve then decelerates into the column. A slow
+    // release gets a longer, calmer glide instead of a short blur.
+    const speed = Math.max(Math.abs(release), MIN_SETTLE_SPEED);
+    const duration = Math.max(
+      MIN_SNAP_MS,
+      Math.min(MAX_SNAP_MS, Math.round((SNAP_LAUNCH_SLOPE * travel) / speed)),
+    );
     // The track was set to "none" on drag start; restore a transition before
     // painting the target so the position change animates instead of jumping.
+    // The artwork rows share this duration (--browse-settle-ms, see globals.css)
+    // so the posters settle with their column instead of drifting behind it.
     if (trackRef.current) trackRef.current.style.transition = `${duration}ms ${SNAP_EASE}`;
+    viewportRef.current?.style.setProperty("--browse-settle-ms", `${duration}ms`);
     if (next !== active) {
       paintAt(next);
       setActive(next);
@@ -240,12 +264,15 @@ export default function Browse({
     overscrolled.current = false;
     suppressClick.current = false;
     viewportRef.current?.setAttribute("data-dragging", "false");
+    // No release speed on a cancelled gesture: fall back to the fixed settle.
+    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (trackRef.current) trackRef.current.style.transition = "";
     paint();
   };
 
   // Dots are the tap fallback: use the fixed settle, not a leftover flick duration.
   const jumpTo = (index: number) => {
+    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
     paintAt(index);
     setActive(index);

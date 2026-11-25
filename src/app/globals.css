@@ -71,9 +71,11 @@ button {
 }
 
 /* Browse columns: artwork follows the finger and settles with the column snap
-   using the same curve as Browse.tsx SNAP_EASE (400 ms, gentle ease-out). */
+   using the same curve as Browse.tsx SNAP_EASE. The duration is written to
+   --browse-settle-ms by Browse.tsx on release so the rows land with their
+   column (400 ms is the dots' fixed tap settle). */
 .browse-art {
-  transition: transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: transform var(--browse-settle-ms, 400ms) cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 .browse-viewport[data-dragging="true"] .browse-art {
   transition: none;
