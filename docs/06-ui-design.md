@@ -124,7 +124,7 @@ Reuse these before creating anything new:
 - Tab colour/transform transitions: 200 ms. Progress bar: 300 ms.
 - Press feedback is `active:scale-95` on chips/tabs and `active:bg-surface`/`active:opacity-80` elsewhere, plus optional haptics via `haptic()`.
 - `prefers-reduced-motion` collapses all animations/transitions to 1 ms in `globals.css` — keep any new motion inside that rule. `Sheet` also checks the media query in JS and uses 0 ms for its WAAPI exit/snap.
-- The Browse columns are finger-driven, never auto-play: the track follows the horizontal drag and each column's poster rows shift up to ±14 px based on their position relative to the active column. Transforms are written straight to the DOM via a `--px` CSS variable (no React re-render per pointer move); the column snap and the artwork settle in 160 ms. The dots are the tap fallback for the swipe.
+- The Browse columns are finger-driven, never auto-play: the track follows the horizontal drag and each column's poster rows shift up to ±14 px based on their position relative to the active column. Transforms are written straight to the DOM via a `--px` CSS variable (no React re-render per pointer move); the column snap and the artwork settle in ~400 ms with a gentle iOS-like ease (`cubic-bezier(0.34, 1, 0.64, 1)` — `Browse.tsx SNAP_TRANSITION`), slower than the app-wide 160 ms tab snap. The dots are the tap fallback for the swipe.
 - Focus is a 2 px accent outline with 2 px offset (`:focus-visible`). Never remove it without a visible replacement.
 
 ## Accessibility is part of the style
