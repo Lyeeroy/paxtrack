@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { Item, SearchResult } from "@/lib/types";
 import Browse from "./Browse";
 import MediaRow from "./MediaRow";
+import PullToLoad from "./PullToLoad";
 import { Empty, IconSearch, ScreenHeader } from "./ui";
 
 interface SearchPage {
@@ -47,7 +48,6 @@ export default function Search({
   const [loadingMore, setLoadingMore] = useState(false);
   const seq = useRef(0);
   const loadingMoreRef = useRef(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     lastQuery = q;
@@ -126,20 +126,6 @@ export default function Search({
     }
   }, [q]);
 
-  // Re-observe after each page so a still-visible sentinel can load the next one.
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) void loadMore();
-      },
-      { rootMargin: "240px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [loadMore, page, totalPages]);
-
   const tracked = new Map(items.map((i) => [i.id, i]));
 
   return (
@@ -173,33 +159,39 @@ export default function Search({
           {state === "loading" && !results.length ? <Empty title="Searching…" /> : null}
           {state === "idle" && !results.length ? <Empty title="No results" /> : null}
 
-          <ul>
-            {results.map((r) => {
-              const id = `${r.type}-${r.tmdbId}`;
-              return (
-                <li key={id} className="cv px-4">
-                  <MediaRow result={r} have={tracked.get(id)} onOpen={onOpen} />
-                </li>
-              );
-            })}
-          </ul>
+          <PullToLoad
+            onTrigger={() => void loadMore()}
+            disabled={loadingMore || !results.length || page >= totalPages}
+            busy={loadingMore}
+          >
+            <ul>
+              {results.map((r) => {
+                const id = `${r.type}-${r.tmdbId}`;
+                return (
+                  <li key={id} className="cv px-4">
+                    <MediaRow result={r} have={tracked.get(id)} onOpen={onOpen} />
+                  </li>
+                );
+              })}
+            </ul>
 
-          {results.length > 0 && page < totalPages ? (
-            <div ref={sentinelRef} className="px-4 py-6 text-center">
-              {loadingMore ? (
-                <p role="status" className="text-xs text-faint">
-                  Loading more…
-                </p>
-              ) : (
-                <button
-                  onClick={() => void loadMore()}
-                  className="h-10 rounded-full bg-surface px-4 text-[13px] text-dim active:bg-raised"
-                >
-                  Load more
-                </button>
-              )}
-            </div>
-          ) : null}
+            {results.length > 0 && page < totalPages ? (
+              <div className="px-4 py-6 text-center">
+                {loadingMore ? (
+                  <p role="status" className="text-xs text-faint">
+                    Loading more…
+                  </p>
+                ) : (
+                  <button
+                    onClick={() => void loadMore()}
+                    className="h-10 rounded-full bg-surface px-4 text-[13px] text-dim active:bg-raised"
+                  >
+                    Load more
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </PullToLoad>
         </>
       )}
     </div>
