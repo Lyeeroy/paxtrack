@@ -18,8 +18,18 @@ Before doing any work in this repo, open [docs/README.md](docs/README.md). It is
 - `docs/04-conventions.md` — code patterns, naming, verification commands.
 - `docs/05-gotchas.md` — Next.js 16, Supabase, sync and PWA traps.
 - `docs/06-ui-design.md` — UI **and UX** specification.
-- `docs/decisions/` — ADRs recording the *why* behind the design.
+- `docs/decisions/` — ADRs recording the _why_ behind the design.
 
 **Goal number one: phone-first UX.** Gestures and near-instant navigation outrank extra features and desktop conventions. Read `docs/06-ui-design.md` before changing any UI or interaction, and `docs/decisions/0005-phone-first-gesture-navigation.md` for why.
 
 Search the docs and the codebase for an existing implementation before writing new code — reuse it, and never add a duplicate helper or component ("replicant" code). Update the relevant doc when you learn something non-obvious. The block above is managed by `next dev`; keep your additions below it.
+
+## Orchestration & Delegation Rules (Mandatory)
+
+You are the Orchestrator. You **must** coordinate work using sub-agents rather than executing multi-step tasks directly:
+
+1. **Never edit files directly** for multi-file features or bug fixes. Always delegate code implementation to `@fixer`.
+2. **Always start with reconnaissance:** Before making a plan or modifying code, dispatch `@explorer` to locate relevant files, dependencies, and patterns.
+3. **Consult `@oracle` for architecture:** Before any major refactor, database change, or tricky debugging session, ask `@oracle` to review the approach.
+4. **Parallelize independent work:** When multiple files or components need updates, spawn multiple `@fixer` background tasks simultaneously instead of doing them sequentially.
+5. **Your role is strictly planning and verifying:** Break the user's request into small tasks, assign them to `@explorer`, `@oracle`, `@fixer`, or `@designer`, and review their output when they finish.

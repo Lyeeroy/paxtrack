@@ -24,21 +24,23 @@ const ART_SHIFT = 14;
 const ART_STYLE: CSSProperties = { transform: "translate3d(var(--px, 0px), 0, 0)" };
 
 /**
- * Settle animation for the column snap, the way other apps settle a horizontal
- * pager: ~400 ms with a gentle ease-out. The app-wide 160 ms tab snap read as
- * an instant jump. A flick scales this duration by how far it carries.
+ * Settle animation for the dots' tap jump: ~400 ms with a gentle ease-out, the
+ * way other apps settle a horizontal pager. The app-wide 160 ms tab snap read as
+ * an instant jump. Drag releases use the same curve, with the duration scaled by
+ * travel.
  */
-const SNAP_EASE = "cubic-bezier(0.34, 1, 0.64, 1)";
+const SNAP_EASE = "cubic-bezier(0.25, 0.46, 0.45, 0.94)";
 const SNAP_TRANSITION = `400ms ${SNAP_EASE}`;
 /**
  * A flick is projected forward by its release velocity, the way UIScrollView
- * predicts its resting offset before a pager snaps to a page. The factor is the
- * integral of an exponential deceleration, shortened so a phone-sized flick
- * crosses about one column instead of flying across the whole shelf.
+ * predicts its resting offset before a pager snaps to a page. On release the
+ * projection is capped to one column (like scroll-snap-stop: always), so a fast
+ * flick advances exactly one column; this factor only sets how quickly it
+ * saturates.
  */
 const MOMENTUM_MS = 220;
 const MIN_SNAP_MS = 180;
-const MAX_SNAP_MS = 480;
+const MAX_SNAP_MS = 320;
 const SNAP_SPEED = 1.6; // px per ms; snap duration = travel / this, clamped
 /** Velocity comes from the last 100 ms only, so an earlier fast swipe can't leak in. */
 const VELOCITY_WINDOW_MS = 100;
@@ -205,9 +207,12 @@ export default function Browse({
       return;
     }
     const s = step();
-    // Project where the flick would coast to, then pick the nearest column.
-    // A quick flick with little displacement now still advances the pager.
-    const projected = releaseVelocity(d.samples, e.timeStamp) * MOMENTUM_MS;
+    // Project where the flick would coast to, then pick the nearest column. The
+    // momentum part is capped to one column so a fast release advances one step
+    // instead of slamming several columns away; the finger's own displacement is
+    // not capped, so a deliberate multi-column drag can still cross several.
+    const rawProjected = releaseVelocity(d.samples, e.timeStamp) * MOMENTUM_MS;
+    const projected = s > 0 ? Math.max(-s, Math.min(s, rawProjected)) : 0;
     let columns = s > 0 ? Math.round(-(d.delta + projected) / s) : 0;
     // A deliberate drag past the old distance threshold moves one column even
     // when the finger slowed to a stop before release (velocity is then zero).

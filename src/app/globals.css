@@ -71,9 +71,9 @@ button {
 }
 
 /* Browse columns: artwork follows the finger and settles with the column snap
-   (400 ms, gentle ease-out — see Browse.tsx SNAP_TRANSITION). */
+   using the same curve as Browse.tsx SNAP_EASE (400 ms, gentle ease-out). */
 .browse-art {
-  transition: transform 400ms cubic-bezier(0.34, 1, 0.64, 1);
+  transition: transform 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 .browse-viewport[data-dragging="true"] .browse-art {
   transition: none;
