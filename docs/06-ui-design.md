@@ -40,7 +40,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 
 ### 3. Fast navigation is a feature
 
-- Tabs are React state, not routes — switching is instant, with no navigation or network.
+- Tabs are React state, not routes — switching is instant, with no navigation or network. Search is the one heavy tab: it is mounted on first visit and then hidden with `display:none` while another tab is active, so returning to it never re-mounts the loaded result/Browse rows (that used to block the switch for ~1 s). `Browse` watches its viewport with a `ResizeObserver` to repaint its track when it becomes visible again, because column widths measure 0 while hidden. Other tabs still mount on demand.
 - The detail view uses `window.history.pushState` / `popstate`, so it slides in immediately and the system back button / OS edge swipe closes it.
 - The library renders synchronously from the in-memory store via `useSyncExternalStore` — no loading spinner. Writes are optimistic: memory updates now, IndexedDB follows.
 - Episode data and metadata load in the background and fill in; "Loading episodes…" never blocks the rest of the screen.

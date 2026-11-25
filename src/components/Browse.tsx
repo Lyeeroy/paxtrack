@@ -137,7 +137,15 @@ export default function Browse({
     paint();
     const onResize = () => paint();
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    // The tab is hidden with display:none when inactive, so columns measure 0
+    // then. Repaint when it becomes visible again, not just on window resize.
+    const viewport = viewportRef.current;
+    const observer = viewport ? new ResizeObserver(onResize) : null;
+    if (viewport) observer?.observe(viewport);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      observer?.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- paint reads refs and current active
   }, [active, loading]);
 

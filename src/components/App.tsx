@@ -61,6 +61,10 @@ function Toaster() {
 export default function App() {
   const { items, eps, ready } = useStore();
   const [tab, setTab] = useState<Tab>("library");
+  // Search is the heavy tab (up to 5x20 result rows or many loaded pages).
+  // Mount it on first visit, then hide it instead of re-mounting on every
+  // tab switch — otherwise returning to it blocks the commit for ~1 s.
+  const [searchMounted, setSearchMounted] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<Item | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -190,7 +194,9 @@ export default function App() {
   const go = (dir: 1 | -1) => {
     const i = TABS.findIndex((t) => t.id === tab);
     const n = TABS[i + dir];
-    if (n) setTab(n.id);
+    if (!n) return;
+    if (n.id === "search") setSearchMounted(true);
+    setTab(n.id);
   };
 
   // Re-tapping the active Search tab jumps to the input and opens the keyboard.
@@ -201,6 +207,7 @@ export default function App() {
       searchInput.current?.focus();
       return;
     }
+    if (id === "search") setSearchMounted(true);
     setTab(id);
   };
 
@@ -230,13 +237,23 @@ export default function App() {
         style={{ touchAction: "pan-y" }}
       >
         {!ready ? null : (
-          <div key={tab} className="anim-up">
-            {tab === "library" ? <Library items={items} eps={eps} onOpen={open} goSearch={() => selectTab("search")} /> : null}
-            {tab === "upcoming" ? <Upcoming items={items} eps={eps} onOpen={open} /> : null}
-            {tab === "search" ? <Search items={items} onOpen={open} inputRef={searchInput} onSwipeTab={go} /> : null}
-            {tab === "history" ? <History items={items} eps={eps} onOpen={open} /> : null}
-            {tab === "settings" ? <Settings /> : null}
-          </div>
+          <>
+            <div key={tab} className="anim-up">
+              {tab === "library" ? <Library items={items} eps={eps} onOpen={open} goSearch={() => selectTab("search")} /> : null}
+              {tab === "upcoming" ? <Upcoming items={items} eps={eps} onOpen={open} /> : null}
+              {tab === "history" ? <History items={items} eps={eps} onOpen={open} /> : null}
+              {tab === "settings" ? <Settings /> : null}
+            </div>
+            {searchMounted ? (
+              <div
+                className={tab === "search" ? "anim-up" : "hidden"}
+                aria-hidden={tab !== "search"}
+                inert={tab !== "search"}
+              >
+                <Search items={items} onOpen={open} inputRef={searchInput} onSwipeTab={go} />
+              </div>
+            ) : null}
+          </>
         )}
       </main>
 
