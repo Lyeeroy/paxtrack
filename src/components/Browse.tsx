@@ -34,9 +34,14 @@ const SNAP_TRANSITION = `400ms ${SNAP_EASE}`;
 /** Below this the finger is too slow for an inertial glide; snap instead. */
 const MIN_FLICK_SPEED = 0.15; // px/ms
 /** Sparse pointer samples can report absurd speeds; keep the glide sane. */
-const MAX_RELEASE_SPEED = 4; // px/ms
-/** Velocity comes from the last 100 ms only, so an earlier fast swipe can't leak in. */
-const VELOCITY_WINDOW_MS = 100;
+const MAX_RELEASE_SPEED = 8; // px/ms
+/** Only the freshest segment counts: a 100 ms average dulls a flick that
+ *  accelerates right before lift. */
+const VELOCITY_WINDOW_MS = 50;
+/** Coalesced touch streams can produce sub-millisecond samples; ignore them. */
+const MIN_SAMPLE_DT_MS = 8;
+/** How long a glide interrupted by a new touch keeps influencing its release. */
+const RESIDUAL_DECAY_MS = 150;
 /** A glide never drags on; fast flicks finish sooner because they cover the
  * distance at higher speed. (No minimum: clamping the duration up would make
  * the Hermite curve reverse direction in its last frames.) */
@@ -45,14 +50,20 @@ const MAX_GLIDE_MS = 420;
 type DragState = {
   x: number;
   y: number;
+  /** Painted offset at touchdown (nonzero when a glide was interrupted). */
+  origin: number;
   delta: number;
   samples: { x: number; t: number }[];
+  /** Velocity the interrupted glide handed to this gesture (px/ms). */
+  residual: number;
+  downT: number;
 };
 
 /**
- * Release velocity in px/ms (signed) from a STRICT recent window. The lift is
- * appended as a sample so a short flick still has two points and a finger that
- * paused before lifting naturally reports ~0 (same x, later t) — no hold timer.
+ * Release velocity in px/ms (signed) from the freshest usable pointer segment
+ * ending at the lift. Averaging a longer window under-reports a flick that
+ * accelerates at the end; a finger that paused before lifting naturally
+ * reports ~0 because its last sample has the same x at a later t.
  */
 function releaseVelocity(
   samples: { x: number; t: number }[],
@@ -62,14 +73,21 @@ function releaseVelocity(
   const pts = [...samples, { x: releaseX, t: releaseT }];
   if (pts.length < 2) return 0;
   const cutoff = releaseT - VELOCITY_WINDOW_MS;
-  let first = pts.length - 1;
-  while (first > 0 && pts[first - 1].t >= cutoff) first--;
-  // Sparse streams: fall back to the previous sample rather than divide by zero.
-  if (first === pts.length - 1) first--;
-  const last = pts[pts.length - 1];
-  const dt = last.t - pts[first].t;
-  if (dt <= 0) return 0;
-  const v = (last.x - pts[first].x) / dt;
+  let first: { x: number; t: number } | null = null;
+  // Newest usable sample first: inside the window, but old enough to measure.
+  for (let i = pts.length - 2; i >= 0; i--) {
+    const p = pts[i];
+    if (releaseT - p.t < MIN_SAMPLE_DT_MS) continue;
+    if (p.t >= cutoff) {
+      first = p;
+      break;
+    }
+    if (!first) first = p; // sparse stream: newest sample older than the window
+  }
+  if (!first) return 0;
+  const dt = releaseT - first.t;
+  if (dt < MIN_SAMPLE_DT_MS) return 0;
+  const v = (releaseX - first.x) / dt;
   return Math.max(-MAX_RELEASE_SPEED, Math.min(MAX_RELEASE_SPEED, v));
 }
 
@@ -98,7 +116,15 @@ export default function Browse({
   const overscrolled = useRef(false);
   const suppressClick = useRef(false);
   const raf = useRef<number | null>(null);
-  /** Painted delta relative to the current active column (only nonzero mid-glide). */
+  /** Index the DOM transform is based on. It commits synchronously so a flick
+   *  that interrupts a glide still advances the page; React `active` only
+   *  drives the dots. */
+  const base = useRef(0);
+  /** Column an in-flight glide is heading to. */
+  const target = useRef<number | null>(null);
+  /** Current velocity of the in-flight glide, handed to the next gesture. */
+  const glideV = useRef(0);
+  /** Painted delta relative to `base` (only nonzero mid-drag/mid-glide). */
   const offset = useRef(0);
   const tracked = new Map(items.map((i) => [i.id, i]));
 
@@ -145,24 +171,59 @@ export default function Browse({
       col.style.setProperty("--px", `${(pos * ART_SHIFT).toFixed(1)}px`);
     }
   };
-  const paint = (delta = 0) => paintAt(active, delta);
+  const paint = (delta = 0) => paintAt(base.current, delta);
 
-  /** Every path that interrupts a glide must stop it in one place. */
-  const cancelGlide = () => {
+  /** Commit a page and the transform relative to it in one synchronous write. */
+  const settleAt = (index: number, delta = 0) => {
+    base.current = index;
+    offset.current = delta;
+    paintAt(index, delta);
+  };
+
+  /** Stop the rAF without committing a page (used on unmount). */
+  const stopGlide = () => {
     if (raf.current !== null) {
       cancelAnimationFrame(raf.current);
       raf.current = null;
     }
+    target.current = null;
+    glideV.current = 0;
+  };
+
+  /**
+   * Interrupting a glide commits its target as the new base immediately and
+   * returns the velocity it had at that instant. Fast repeated flicks therefore
+   * advance a page each time (instead of re-targeting a stale `active`) and
+   * inherit the leftover momentum instead of restarting from zero.
+   */
+  const interruptGlide = (): number => {
+    if (raf.current === null) return 0;
+    const v = glideV.current;
+    const next = target.current ?? base.current;
+    stopGlide();
+    // Rebase the current painted offset onto the committed page so the track
+    // does not jump when the base changes.
+    const delta = offset.current + (next - base.current) * step();
+    settleAt(next, delta);
+    setActive(next);
+    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
+    return v;
   };
 
   useEffect(() => {
-    cancelGlide();
-    paint();
-    offset.current = 0;
-    const onResize = () => {
-      cancelGlide();
+    const repaint = () => {
+      // Never overwrite a live drag or glide with a resting transform.
+      if (drag.current || raf.current !== null) return;
       paint();
       offset.current = 0;
+    };
+    repaint();
+    const onResize = () => {
+      interruptGlide();
+      if (!drag.current) {
+        paint();
+        offset.current = 0;
+      }
     };
     window.addEventListener("resize", onResize);
     // The tab is hidden with display:none when inactive, so columns measure 0
@@ -171,28 +232,30 @@ export default function Browse({
     const observer = viewport ? new ResizeObserver(onResize) : null;
     if (viewport) observer?.observe(viewport);
     return () => {
-      cancelGlide();
+      stopGlide();
       window.removeEventListener("resize", onResize);
       observer?.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- paint/cancelGlide read refs and current active
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- paint/interruptGlide read refs and current active
   }, [active, loading]);
 
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    // Grabbing the track mid-glide must pick it up where it is visually, not
-    // where the previous gesture started.
-    cancelGlide();
+    // Grabbing the track mid-glide commits that glide's page and inherits its
+    // velocity, so the finger picks up the motion instead of restarting it.
+    const residual = interruptGlide();
     const from = offset.current;
-    paint(from);
     // No pointer capture: it retargets the following click to the viewport and
     // taps on a row's buttons would never fire. Touch already captures implicitly.
     e.currentTarget.setAttribute("data-dragging", "true");
     drag.current = {
       x: e.clientX,
       y: e.clientY,
+      origin: from,
       delta: from,
       samples: [{ x: e.clientX, t: e.timeStamp }],
+      residual,
+      downT: e.timeStamp,
     };
     moved.current = false;
     overscrolled.current = false;
@@ -209,11 +272,13 @@ export default function Browse({
       if (Math.abs(dx) <= 8 || Math.abs(dx) <= Math.abs(dy)) return;
       moved.current = true;
     }
-    // Never reveal a blank track beyond the first or last column.
-    let delta = dx;
-    if (active === 0) delta = Math.min(delta, 0);
-    if (active === SHELVES.length - 1) delta = Math.max(delta, 0);
-    const over = dx - delta;
+    // Never reveal a blank track beyond the first or last column. The offset
+    // grabbed from an interrupted glide is the starting point, not zero.
+    const raw = d.origin + dx;
+    let delta = raw;
+    if (base.current === 0) delta = Math.min(delta, 0);
+    if (base.current === SHELVES.length - 1) delta = Math.max(delta, 0);
+    const over = raw - delta;
     if (Math.abs(over) > 32) {
       overscrolled.current = true;
       onOverscroll?.(over > 0 ? -1 : 1);
@@ -222,27 +287,36 @@ export default function Browse({
     d.delta = delta;
     paint(delta);
     d.samples.push({ x: e.clientX, t: e.timeStamp });
-    // Keep the last ~100 ms, but retain the sample just before the cutoff so
-    // velocity still has two points when the window is sparse.
+    // Keep the freshest samples, retaining the one just before the cutoff so
+    // velocity still has two points when the touch stream is sparse.
     const cutoff = e.timeStamp - VELOCITY_WINDOW_MS;
     while (d.samples.length > 2 && d.samples[1].t < cutoff) d.samples.shift();
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
-    suppressClick.current = !!d && Math.abs(d.delta) > 12;
+    suppressClick.current = !!d && Math.abs(d.delta - d.origin) > 12;
     drag.current = null;
     viewportRef.current?.setAttribute("data-dragging", "false");
     if (!d || overscrolled.current) {
-      cancelGlide();
+      interruptGlide();
       if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
       viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
-      paint();
-      offset.current = 0;
+      settleAt(base.current, 0);
       return;
     }
     const s = step();
-    const release = releaseVelocity(d.samples, e.clientX, e.timeStamp);
+    const finger = releaseVelocity(d.samples, e.clientX, e.timeStamp);
+    // A glide this touch interrupted keeps a little of its speed, decaying over
+    // ~150 ms, so rapid flicks feel continuous instead of restarting from zero.
+    // A stationary finger (a tap) never inherits it.
+    const carry = moved.current
+      ? d.residual * Math.max(0, 1 - (e.timeStamp - d.downT) / RESIDUAL_DECAY_MS)
+      : 0;
+    const release = Math.max(
+      -MAX_RELEASE_SPEED,
+      Math.min(MAX_RELEASE_SPEED, finger + carry),
+    );
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // A flick is capped to one column: a hard flick lands on the same page as
     // a soft one, it just starts at the finger's real speed instead of being
@@ -251,21 +325,22 @@ export default function Browse({
     let columns = 0;
     // The cap applies to the *momentum*, not to a finger that physically
     // dragged across more than one column: that keeps its real distance.
-    const deliberateMulti = s > 0 && Math.abs(d.delta) > s * 1.5;
+    const movedBy = d.delta - d.origin;
+    const deliberateMulti = s > 0 && Math.abs(movedBy) > s * 1.5;
     if (!deliberateMulti && Math.abs(release) >= MIN_FLICK_SPEED) {
       columns = release < 0 ? 1 : -1;
     } else {
       columns = s > 0 ? Math.round(-d.delta / s) : 0;
-      if (columns === 0 && Math.abs(d.delta) > Math.min(70, s / 4)) {
-        columns = d.delta < 0 ? 1 : -1;
+      if (columns === 0 && Math.abs(movedBy) > Math.min(70, s / 4)) {
+        columns = movedBy < 0 ? 1 : -1;
       }
     }
-    const next = Math.max(0, Math.min(SHELVES.length - 1, active + columns));
-    const to = (active - next) * s;
+    const next = Math.max(0, Math.min(SHELVES.length - 1, base.current + columns));
+    const to = (base.current - next) * s;
     const disp = to - d.delta;
 
     if (
-      next !== active &&
+      next !== base.current &&
       !reduced &&
       Math.abs(release) >= MIN_FLICK_SPEED &&
       Math.abs(disp) >= 1
@@ -274,7 +349,7 @@ export default function Browse({
       // the target column. A fixed CSS ease cannot do this: its launch slope
       // plus a minimum duration throws away speed on exactly the fast flicks
       // that should feel fastest.
-      cancelGlide();
+      stopGlide();
       const from = d.delta;
       const T = Math.min(MAX_GLIDE_MS, (2 * Math.abs(disp)) / Math.abs(release));
       const c3 = (release * T - 2 * disp) / (T * T * T);
@@ -283,19 +358,23 @@ export default function Browse({
       // transition must be off during the glide or they lag behind the track.
       if (trackRef.current) trackRef.current.style.transition = "none";
       viewportRef.current?.style.setProperty("--browse-settle-ms", "0ms");
+      target.current = next;
+      glideV.current = release;
       const start = performance.now();
       const frame = (now: number) => {
         const u = Math.min(Math.max(now - start, 0), T);
         const p = from + release * u + c2 * u * u + c3 * u * u * u;
         paint(p);
         offset.current = p;
+        glideV.current = release + 2 * c2 * u + 3 * c3 * u * u;
         if (u < T) {
           raf.current = requestAnimationFrame(frame);
           return;
         }
         raf.current = null;
-        paint(to);
-        offset.current = 0;
+        target.current = null;
+        glideV.current = 0;
+        settleAt(next, 0);
         viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
         setActive(next);
       };
@@ -305,20 +384,15 @@ export default function Browse({
 
     // No flick velocity, reduced motion, or no page change: keep the fixed
     // settle so a stopped finger still moves a page but never glides.
-    cancelGlide();
+    stopGlide();
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
     viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
-    if (next !== active) {
-      paintAt(next);
-      setActive(next);
-    } else {
-      paint();
-    }
-    offset.current = 0;
+    settleAt(next, 0);
+    setActive(next);
   };
 
   const cancelDrag = () => {
-    cancelGlide();
+    interruptGlide();
     drag.current = null;
     overscrolled.current = false;
     suppressClick.current = false;
@@ -326,17 +400,15 @@ export default function Browse({
     // No release speed on a cancelled gesture: fall back to the fixed settle.
     viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
-    paint();
-    offset.current = 0;
+    settleAt(base.current, 0);
   };
 
   // Dots are the tap fallback: use the fixed settle, not an in-flight glide.
   const jumpTo = (index: number) => {
-    cancelGlide();
+    interruptGlide();
     viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
-    paintAt(index);
-    offset.current = 0;
+    settleAt(index, 0);
     setActive(index);
   };
 
