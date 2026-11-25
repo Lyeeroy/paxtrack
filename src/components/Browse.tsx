@@ -26,9 +26,41 @@ const ART_STYLE: CSSProperties = { transform: "translate3d(var(--px, 0px), 0, 0)
 /**
  * Settle animation for the column snap, the way other apps settle a horizontal
  * pager: ~400 ms with a gentle ease-out. The app-wide 160 ms tab snap read as
- * an instant jump.
+ * an instant jump. A flick scales this duration by how far it carries.
  */
-const SNAP_TRANSITION = "400ms cubic-bezier(0.34, 1, 0.64, 1)";
+const SNAP_EASE = "cubic-bezier(0.34, 1, 0.64, 1)";
+const SNAP_TRANSITION = `400ms ${SNAP_EASE}`;
+/**
+ * A flick is projected forward by its release velocity, the way UIScrollView
+ * predicts its resting offset before a pager snaps to a page. The factor is the
+ * integral of an exponential deceleration, shortened so a phone-sized flick
+ * crosses about one column instead of flying across the whole shelf.
+ */
+const MOMENTUM_MS = 220;
+const MIN_SNAP_MS = 180;
+const MAX_SNAP_MS = 480;
+const SNAP_SPEED = 1.6; // px per ms; snap duration = travel / this, clamped
+/** Velocity comes from the last 100 ms only, so an earlier fast swipe can't leak in. */
+const VELOCITY_WINDOW_MS = 100;
+/** A pause this long before release means the finger came to rest — no momentum. */
+const HOLD_MS = 80;
+
+type DragState = {
+  x: number;
+  y: number;
+  delta: number;
+  samples: { x: number; t: number }[];
+};
+
+/** Release velocity in px/ms (signed) from the recent pointer samples. */
+function releaseVelocity(samples: { x: number; t: number }[], releaseT: number): number {
+  if (samples.length < 2) return 0;
+  const last = samples[samples.length - 1];
+  if (releaseT - last.t > HOLD_MS) return 0;
+  const first = samples[0];
+  const dt = last.t - first.t;
+  return dt > 0 ? (last.x - first.x) / dt : 0;
+}
 
 export default function Browse({
   items,
@@ -50,7 +82,7 @@ export default function Browse({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const colRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const drag = useRef<{ x: number; y: number; delta: number } | null>(null);
+  const drag = useRef<DragState | null>(null);
   const moved = useRef(false);
   const overscrolled = useRef(false);
   const suppressClick = useRef(false);
@@ -114,7 +146,12 @@ export default function Browse({
     // No pointer capture: it retargets the following click to the viewport and
     // taps on a row's buttons would never fire. Touch already captures implicitly.
     e.currentTarget.setAttribute("data-dragging", "true");
-    drag.current = { x: e.clientX, y: e.clientY, delta: 0 };
+    drag.current = {
+      x: e.clientX,
+      y: e.clientY,
+      delta: 0,
+      samples: [{ x: e.clientX, t: e.timeStamp }],
+    };
     moved.current = false;
     overscrolled.current = false;
     suppressClick.current = false;
@@ -142,26 +179,42 @@ export default function Browse({
     }
     d.delta = delta;
     paint(delta);
+    d.samples.push({ x: e.clientX, t: e.timeStamp });
+    // Keep the last ~100 ms, but retain the sample just before the cutoff so
+    // velocity still has two points when the window is sparse.
+    const cutoff = e.timeStamp - VELOCITY_WINDOW_MS;
+    while (d.samples.length > 2 && d.samples[1].t < cutoff) d.samples.shift();
   };
 
-  const endDrag = () => {
+  const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     suppressClick.current = !!d && Math.abs(d.delta) > 12;
     drag.current = null;
     viewportRef.current?.setAttribute("data-dragging", "false");
-    if (trackRef.current) trackRef.current.style.transition = "";
     if (!d || overscrolled.current) {
+      if (trackRef.current) trackRef.current.style.transition = "";
       paint();
       return;
     }
     const s = step();
-    let next = active;
-    if (Math.abs(d.delta) > Math.min(70, s / 4)) next = active + (d.delta < 0 ? 1 : -1);
-    next = Math.max(0, Math.min(SHELVES.length - 1, next));
+    // Project where the flick would coast to, then pick the nearest column.
+    // A quick flick with little displacement now still advances the pager.
+    const projected = releaseVelocity(d.samples, e.timeStamp) * MOMENTUM_MS;
+    let columns = s > 0 ? Math.round(-(d.delta + projected) / s) : 0;
+    // A deliberate drag past the old distance threshold moves one column even
+    // when the finger slowed to a stop before release (velocity is then zero).
+    if (columns === 0 && projected * d.delta >= 0 && Math.abs(d.delta) > Math.min(70, s / 4)) {
+      columns = d.delta < 0 ? 1 : -1;
+    }
+    const next = Math.max(0, Math.min(SHELVES.length - 1, active + columns));
+    // Travel length sets the duration, so a multi-column flick moves at roughly
+    // the same speed as a short snap instead of teleporting to the target.
+    const travel = Math.abs((active - next) * s - d.delta);
+    const duration = Math.max(MIN_SNAP_MS, Math.min(MAX_SNAP_MS, Math.round(travel / SNAP_SPEED)));
+    // The track was set to "none" on drag start; restore a transition before
+    // painting the target so the position change animates instead of jumping.
+    if (trackRef.current) trackRef.current.style.transition = `${duration}ms ${SNAP_EASE}`;
     if (next !== active) {
-      // Snap with the settle transition: the track was set to "none" on drag
-      // start, so restore a transition before painting the target.
-      if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
       paintAt(next);
       setActive(next);
     } else {
@@ -176,6 +229,13 @@ export default function Browse({
     viewportRef.current?.setAttribute("data-dragging", "false");
     if (trackRef.current) trackRef.current.style.transition = "";
     paint();
+  };
+
+  // Dots are the tap fallback: use the fixed settle, not a leftover flick duration.
+  const jumpTo = (index: number) => {
+    if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
+    paintAt(index);
+    setActive(index);
   };
 
   const openFromRow = useCallback(
@@ -256,7 +316,7 @@ export default function Browse({
           {SHELVES.map((s, i) => (
             <button
               key={s.key}
-              onClick={() => setActive(i)}
+              onClick={() => jumpTo(i)}
               aria-label={`Show ${s.label}`}
               aria-current={i === active ? "true" : undefined}
               className={`h-1.5 rounded-full transition-all duration-150 ${i === active ? "w-4 bg-accent" : "w-1.5 bg-faint"}`}
