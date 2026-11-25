@@ -32,4 +32,3 @@ Write about *why*, not *what* — the code already says what. Update the status 
 - [0006 — Info bottom sheet on the detail view](./0006-info-bottom-sheet.md) — why this one modal pattern is allowed, and the constraints it keeps.
 - [0007 — Sheet interaction contract](./0007-sheet-interaction-contract.md) — the reusable sheet's dismissal, detents, drag, focus and motion rules.
 - [0008 — Browse uses native scroll-snap, not a JS pager](./0008-native-scroll-snap-pager.md) — why momentum is the browser's job and `<main>` must allow `pan-x`; do not reintroduce a JS fling.
-- [0009 — Bottom pull to load more in Search](./0009-bottom-pull-to-load-more.md) — the gesture, circle fill and momentum gate that replaced auto-loading on scroll.
