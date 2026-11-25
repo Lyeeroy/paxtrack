@@ -234,7 +234,7 @@ export default function App() {
           if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 2 && Date.now() - s.t < 700) go(dx < 0 ? 1 : -1);
         }}
         onPointerCancel={() => (swipe.current = null)}
-        style={{ touchAction: "pan-y" }}
+        style={{ touchAction: "pan-x pan-y" }}
       >
         {!ready ? null : (
           <>
