@@ -30,36 +30,6 @@ const ART_STYLE: CSSProperties = { transform: "translate3d(var(--px, 0px), 0, 0)
  */
 const SNAP_TRANSITION = "400ms cubic-bezier(0.34, 1, 0.64, 1)";
 
-/** In-flight warm-up shared by the boot prefetch and the mount effect. */
-let browseFetch: Promise<void> | null = null;
-
-/** Fetch any browse categories missing from the cache; in-flight safe. */
-function fetchMissing(): Promise<void> {
-  if (browseFetch) return browseFetch;
-  const missing = SHELVES.filter((s) => !cache.has(s.key));
-  if (!missing.length) return Promise.resolve();
-  browseFetch = Promise.all(
-    missing.map(async (s) => {
-      try {
-        const res = await fetch(`/api/tmdb/browse?category=${s.key}`);
-        if (!res.ok) return;
-        const json = (await res.json()) as { results: SearchResult[] };
-        cache.set(s.key, json.results);
-      } catch {
-        /* Offline: the column stays empty and can retry on the next mount. */
-      }
-    }),
-  ).then(() => {
-    browseFetch = null;
-  });
-  return browseFetch;
-}
-
-/** Kick the same warm-up off earlier (app boot) without mounting Browse. */
-export function prefetchBrowse(): void {
-  void fetchMissing();
-}
-
 export default function Browse({
   items,
   onOpen,
@@ -87,8 +57,21 @@ export default function Browse({
   const tracked = new Map(items.map((i) => [i.id, i]));
 
   useEffect(() => {
+    const missing = SHELVES.filter((s) => !cache.has(s.key));
+    if (!missing.length) return;
     let alive = true;
-    void fetchMissing().then(() => {
+    void Promise.all(
+      missing.map(async (s) => {
+        try {
+          const res = await fetch(`/api/tmdb/browse?category=${s.key}`);
+          if (!res.ok) return;
+          const json = (await res.json()) as { results: SearchResult[] };
+          cache.set(s.key, json.results);
+        } catch {
+          /* Offline: the column stays empty and can retry on the next mount. */
+        }
+      }),
+    ).then(() => {
       if (!alive) return;
       const next = {} as Record<Category, SearchResult[]>;
       for (const s of SHELVES) next[s.key] = cache.get(s.key) ?? [];

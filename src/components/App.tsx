@@ -8,7 +8,6 @@ import { discardPreview, getSnapshot, getStoreEpoch, initStore, removeItem, useS
 import { startAutoSync } from "@/lib/sync";
 import { dismissToast, haptic, showToast, useToast } from "@/lib/toast";
 import type { Item } from "@/lib/types";
-import { prefetchBrowse } from "./Browse";
 import Detail from "./Detail";
 import History from "./History";
 import Library from "./Library";
@@ -88,9 +87,6 @@ export default function App() {
       void initAuth();
       void run();
       if (notificationsEnabled()) void registerPeriodic();
-      // Warm the Search tab's browse columns while the user is elsewhere, so
-      // the first visit to Search is as fast as the cached ones.
-      prefetchBrowse();
     });
     if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});

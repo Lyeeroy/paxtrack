@@ -86,7 +86,9 @@ export default function Search({
           if (id === seq.current) setState("error");
         }
       },
-      350,
+      // Shorter than the old 350 ms: on a first visit the user otherwise
+      // waits debounce + fetch before anything displays.
+      200,
     );
     return () => clearTimeout(t);
   }, [q]);

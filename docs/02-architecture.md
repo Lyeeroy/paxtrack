@@ -17,7 +17,7 @@
   Server (src/app/... routes, src/proxy.ts, supabase/schema.sql)
 ```
 
-Rule of thumb: **components never touch IndexedDB, Supabase or `fetch` directly.** They call functions from `src/lib/` and subscribe with a `useX()` hook. `Search.tsx` is a small exception — it owns its own transient query cache and fetches `/api/tmdb/search`; `Browse.tsx` likewise caches its five category lists from `/api/tmdb/browse` (prefetched at app boot via `prefetchBrowse()` so the first visit to Search is as fast as the cached ones). Both still write through `addItem()` / `createPreview()` (via `onOpen` for Browse).
+Rule of thumb: **components never touch IndexedDB, Supabase or `fetch` directly.** They call functions from `src/lib/` and subscribe with a `useX()` hook. `Search.tsx` is a small exception — it owns its own transient query cache and fetches `/api/tmdb/search`; `Browse.tsx` likewise caches its five category lists from `/api/tmdb/browse`. Both still write through `addItem()` / `createPreview()` (via `onOpen` for Browse).
 
 ## The in-memory store (`src/lib/store.ts`)
 
