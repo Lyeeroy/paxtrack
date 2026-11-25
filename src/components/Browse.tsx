@@ -24,40 +24,23 @@ const ART_SHIFT = 14;
 const ART_STYLE: CSSProperties = { transform: "translate3d(var(--px, 0px), 0, 0)" };
 
 /**
- * Settle animation for the dots' tap jump: ~400 ms with a gentle ease-out, the
- * way other apps settle a horizontal pager. The app-wide 160 ms tab snap read as
- * an instant jump. Drag releases use the same curve and size their own duration
- * from the release speed (see endDrag).
+ * Fixed settle for the dots' tap jump and for releases with no flick velocity:
+ * ~400 ms with a gentle ease-out. Flick releases instead hand their measured
+ * velocity to a rAF glide (see endDrag), which a fixed CSS ease cannot do
+ * without throwing away speed at the first frame.
  */
 const SNAP_EASE = "cubic-bezier(0.25, 0.46, 0.45, 0.94)";
 const SNAP_TRANSITION = `400ms ${SNAP_EASE}`;
-/**
- * Every ease-out starts faster than its average speed. For this curve the launch
- * slope is y1 / x1 = 0.46 / 0.25 = 1.84, which is used to size a settle so its
- * first frame moves at the finger's release speed instead of jerking away from
- * it. That velocity handoff — not the curve alone — is what makes a pager feel
- * like a native scroll view: swipe speed and snap speed are the same number.
- */
-const SNAP_LAUNCH_SLOPE = 1.84;
-/** Outside this window a settle reads either as a jump or as a slow glide. */
-const MIN_SNAP_MS = 200;
-const MAX_SNAP_MS = 440;
-/** A finger that came to rest before release still needs a settle that starts moving. */
-const MIN_SETTLE_SPEED = 0.55; // px/ms
-/** Sparse pointer samples can report absurd speeds; keep the settle sane. */
+/** Below this the finger is too slow for an inertial glide; snap instead. */
+const MIN_FLICK_SPEED = 0.15; // px/ms
+/** Sparse pointer samples can report absurd speeds; keep the glide sane. */
 const MAX_RELEASE_SPEED = 4; // px/ms
-/**
- * A flick is projected forward by its release velocity, the way UIScrollView
- * predicts its resting offset before a pager snaps to a page. On release the
- * projection is capped to one column (like scroll-snap-stop: always), so a fast
- * flick advances exactly one column; this factor only sets how quickly it
- * saturates.
- */
-const MOMENTUM_MS = 220;
 /** Velocity comes from the last 100 ms only, so an earlier fast swipe can't leak in. */
 const VELOCITY_WINDOW_MS = 100;
-/** A pause this long before release means the finger came to rest — no momentum. */
-const HOLD_MS = 80;
+/** A glide never drags on; fast flicks finish sooner because they cover the
+ * distance at higher speed. (No minimum: clamping the duration up would make
+ * the Hermite curve reverse direction in its last frames.) */
+const MAX_GLIDE_MS = 420;
 
 type DragState = {
   x: number;
@@ -66,15 +49,27 @@ type DragState = {
   samples: { x: number; t: number }[];
 };
 
-/** Release velocity in px/ms (signed) from the recent pointer samples. */
-function releaseVelocity(samples: { x: number; t: number }[], releaseT: number): number {
-  if (samples.length < 2) return 0;
-  const last = samples[samples.length - 1];
-  if (releaseT - last.t > HOLD_MS) return 0;
-  const first = samples[0];
-  const dt = last.t - first.t;
+/**
+ * Release velocity in px/ms (signed) from a STRICT recent window. The lift is
+ * appended as a sample so a short flick still has two points and a finger that
+ * paused before lifting naturally reports ~0 (same x, later t) — no hold timer.
+ */
+function releaseVelocity(
+  samples: { x: number; t: number }[],
+  releaseX: number,
+  releaseT: number,
+): number {
+  const pts = [...samples, { x: releaseX, t: releaseT }];
+  if (pts.length < 2) return 0;
+  const cutoff = releaseT - VELOCITY_WINDOW_MS;
+  let first = pts.length - 1;
+  while (first > 0 && pts[first - 1].t >= cutoff) first--;
+  // Sparse streams: fall back to the previous sample rather than divide by zero.
+  if (first === pts.length - 1) first--;
+  const last = pts[pts.length - 1];
+  const dt = last.t - pts[first].t;
   if (dt <= 0) return 0;
-  const v = (last.x - first.x) / dt;
+  const v = (last.x - pts[first].x) / dt;
   return Math.max(-MAX_RELEASE_SPEED, Math.min(MAX_RELEASE_SPEED, v));
 }
 
@@ -102,6 +97,9 @@ export default function Browse({
   const moved = useRef(false);
   const overscrolled = useRef(false);
   const suppressClick = useRef(false);
+  const raf = useRef<number | null>(null);
+  /** Painted delta relative to the current active column (only nonzero mid-glide). */
+  const offset = useRef(0);
   const tracked = new Map(items.map((i) => [i.id, i]));
 
   useEffect(() => {
@@ -149,9 +147,23 @@ export default function Browse({
   };
   const paint = (delta = 0) => paintAt(active, delta);
 
+  /** Every path that interrupts a glide must stop it in one place. */
+  const cancelGlide = () => {
+    if (raf.current !== null) {
+      cancelAnimationFrame(raf.current);
+      raf.current = null;
+    }
+  };
+
   useEffect(() => {
+    cancelGlide();
     paint();
-    const onResize = () => paint();
+    offset.current = 0;
+    const onResize = () => {
+      cancelGlide();
+      paint();
+      offset.current = 0;
+    };
     window.addEventListener("resize", onResize);
     // The tab is hidden with display:none when inactive, so columns measure 0
     // then. Repaint when it becomes visible again, not just on window resize.
@@ -159,21 +171,27 @@ export default function Browse({
     const observer = viewport ? new ResizeObserver(onResize) : null;
     if (viewport) observer?.observe(viewport);
     return () => {
+      cancelGlide();
       window.removeEventListener("resize", onResize);
       observer?.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- paint reads refs and current active
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- paint/cancelGlide read refs and current active
   }, [active, loading]);
 
   const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    // Grabbing the track mid-glide must pick it up where it is visually, not
+    // where the previous gesture started.
+    cancelGlide();
+    const from = offset.current;
+    paint(from);
     // No pointer capture: it retargets the following click to the viewport and
     // taps on a row's buttons would never fire. Touch already captures implicitly.
     e.currentTarget.setAttribute("data-dragging", "true");
     drag.current = {
       x: e.clientX,
       y: e.clientY,
-      delta: 0,
+      delta: from,
       samples: [{ x: e.clientX, t: e.timeStamp }],
     };
     moved.current = false;
@@ -216,65 +234,109 @@ export default function Browse({
     drag.current = null;
     viewportRef.current?.setAttribute("data-dragging", "false");
     if (!d || overscrolled.current) {
-      if (trackRef.current) trackRef.current.style.transition = "";
+      cancelGlide();
+      if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
+      viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
       paint();
+      offset.current = 0;
       return;
     }
     const s = step();
-    const release = releaseVelocity(d.samples, e.timeStamp);
-    // Project where the flick would coast to, then pick the nearest column. The
-    // momentum part is capped to one column so a fast release advances one step
-    // instead of slamming several columns away; the finger's own displacement is
-    // not capped, so a deliberate multi-column drag can still cross several.
-    const rawProjected = release * MOMENTUM_MS;
-    const projected = s > 0 ? Math.max(-s, Math.min(s, rawProjected)) : 0;
-    let columns = s > 0 ? Math.round(-(d.delta + projected) / s) : 0;
-    // A deliberate drag past the old distance threshold moves one column even
-    // when the finger slowed to a stop before release (velocity is then zero).
-    if (columns === 0 && projected * d.delta >= 0 && Math.abs(d.delta) > Math.min(70, s / 4)) {
-      columns = d.delta < 0 ? 1 : -1;
+    const release = releaseVelocity(d.samples, e.clientX, e.timeStamp);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // A flick is capped to one column: a hard flick lands on the same page as
+    // a soft one, it just starts at the finger's real speed instead of being
+    // dulled by a fixed ease. Velocity wins over displacement, so a last-moment
+    // counter-flick still reverses the page.
+    let columns = 0;
+    // The cap applies to the *momentum*, not to a finger that physically
+    // dragged across more than one column: that keeps its real distance.
+    const deliberateMulti = s > 0 && Math.abs(d.delta) > s * 1.5;
+    if (!deliberateMulti && Math.abs(release) >= MIN_FLICK_SPEED) {
+      columns = release < 0 ? 1 : -1;
+    } else {
+      columns = s > 0 ? Math.round(-d.delta / s) : 0;
+      if (columns === 0 && Math.abs(d.delta) > Math.min(70, s / 4)) {
+        columns = d.delta < 0 ? 1 : -1;
+      }
     }
     const next = Math.max(0, Math.min(SHELVES.length - 1, active + columns));
-    const travel = Math.abs((active - next) * s - d.delta);
-    // duration = launchSlope * travel / speed keeps the first animated frame at
-    // the finger's release speed, so there is no visible acceleration at the
-    // moment of release; the curve then decelerates into the column. A slow
-    // release gets a longer, calmer glide instead of a short blur.
-    const speed = Math.max(Math.abs(release), MIN_SETTLE_SPEED);
-    const duration = Math.max(
-      MIN_SNAP_MS,
-      Math.min(MAX_SNAP_MS, Math.round((SNAP_LAUNCH_SLOPE * travel) / speed)),
-    );
-    // The track was set to "none" on drag start; restore a transition before
-    // painting the target so the position change animates instead of jumping.
-    // The artwork rows share this duration (--browse-settle-ms, see globals.css)
-    // so the posters settle with their column instead of drifting behind it.
-    if (trackRef.current) trackRef.current.style.transition = `${duration}ms ${SNAP_EASE}`;
-    viewportRef.current?.style.setProperty("--browse-settle-ms", `${duration}ms`);
+    const to = (active - next) * s;
+    const disp = to - d.delta;
+
+    if (
+      next !== active &&
+      !reduced &&
+      Math.abs(release) >= MIN_FLICK_SPEED &&
+      Math.abs(disp) >= 1
+    ) {
+      // Cubic Hermite from the finger's velocity to rest, landing exactly on
+      // the target column. A fixed CSS ease cannot do this: its launch slope
+      // plus a minimum duration throws away speed on exactly the fast flicks
+      // that should feel fastest.
+      cancelGlide();
+      const from = d.delta;
+      const T = Math.min(MAX_GLIDE_MS, (2 * Math.abs(disp)) / Math.abs(release));
+      const c3 = (release * T - 2 * disp) / (T * T * T);
+      const c2 = (3 * disp) / (T * T) - (2 * release) / T;
+      // The artwork rows are repainted by paint() every frame, so their CSS
+      // transition must be off during the glide or they lag behind the track.
+      if (trackRef.current) trackRef.current.style.transition = "none";
+      viewportRef.current?.style.setProperty("--browse-settle-ms", "0ms");
+      const start = performance.now();
+      const frame = (now: number) => {
+        const u = Math.min(Math.max(now - start, 0), T);
+        const p = from + release * u + c2 * u * u + c3 * u * u * u;
+        paint(p);
+        offset.current = p;
+        if (u < T) {
+          raf.current = requestAnimationFrame(frame);
+          return;
+        }
+        raf.current = null;
+        paint(to);
+        offset.current = 0;
+        viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
+        setActive(next);
+      };
+      raf.current = requestAnimationFrame(frame);
+      return;
+    }
+
+    // No flick velocity, reduced motion, or no page change: keep the fixed
+    // settle so a stopped finger still moves a page but never glides.
+    cancelGlide();
+    if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
+    viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (next !== active) {
       paintAt(next);
       setActive(next);
     } else {
       paint();
     }
+    offset.current = 0;
   };
 
   const cancelDrag = () => {
+    cancelGlide();
     drag.current = null;
     overscrolled.current = false;
     suppressClick.current = false;
     viewportRef.current?.setAttribute("data-dragging", "false");
     // No release speed on a cancelled gesture: fall back to the fixed settle.
     viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
-    if (trackRef.current) trackRef.current.style.transition = "";
+    if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
     paint();
+    offset.current = 0;
   };
 
-  // Dots are the tap fallback: use the fixed settle, not a leftover flick duration.
+  // Dots are the tap fallback: use the fixed settle, not an in-flight glide.
   const jumpTo = (index: number) => {
+    cancelGlide();
     viewportRef.current?.style.setProperty("--browse-settle-ms", "400ms");
     if (trackRef.current) trackRef.current.style.transition = SNAP_TRANSITION;
     paintAt(index);
+    offset.current = 0;
     setActive(index);
   };
 
