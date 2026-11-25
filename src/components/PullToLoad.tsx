@@ -20,6 +20,8 @@ const MAX_PULL = 140;
 const DAMPING = 0.6;
 /** Finger travel past the bottom needed to trigger a load (px). */
 const TRIGGER_DY = 120;
+/** Rows can grow a few px after scrolling (hydration/images); still count as bottom. */
+const BOTTOM_TOLERANCE = 64;
 const RETURN_MS = 180;
 const RETURN_EASE = "cubic-bezier(0.25, 0.46, 0.45, 0.94)";
 
@@ -79,7 +81,7 @@ export default function PullToLoad({
 
     const atBottom = () => {
       const doc = document.scrollingElement ?? document.documentElement;
-      return doc.scrollTop + window.innerHeight >= doc.scrollHeight - 2;
+      return doc.scrollTop + window.innerHeight >= doc.scrollHeight - BOTTOM_TOLERANCE;
     };
 
     const begin = (y: number) => {
