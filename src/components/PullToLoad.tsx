@@ -9,18 +9,17 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
  * pull-to-refresh hook: a touch-slop gate, damped travel (the content gives a
  * little, then gets harder), an arc that stays empty for the first 40% of the
  * pull and fills to 80% at the trigger, and a spinner held until loading ends.
- * It only arms on a FRESH touch that starts at the document bottom — scroll
- * momentum carrying the user there does not count.
+ * It arms the moment an ACTIVE touch reaches the document bottom, so the same
+ * finger can keep dragging and reveal the circle. Scroll momentum cannot
+ * trigger it because there is no finger down once a fling starts.
  */
 const TOUCH_SLOP = 8;
 /** Asymptotic maximum content travel (px). */
 const MAX_PULL = 140;
 /** How quickly travel approaches the maximum. */
 const DAMPING = 0.6;
-/** Finger travel needed to trigger a load (px). */
+/** Finger travel past the bottom needed to trigger a load (px). */
 const TRIGGER_DY = 120;
-/** Ignore a touch this soon after the last scroll event (ms). */
-const MOMENTUM_GUARD_MS = 140;
 const RETURN_MS = 180;
 const RETURN_EASE = "cubic-bezier(0.25, 0.46, 0.45, 0.94)";
 
@@ -44,7 +43,6 @@ export default function PullToLoad({
   const arcRef = useRef<SVGCircleElement | null>(null);
   const disabledRef = useRef(disabled);
   const triggerRef = useRef(onTrigger);
-  const lastScroll = useRef(0);
   const collapsing = useRef(false);
   const [loading, setLoading] = useState(false);
 
@@ -72,9 +70,33 @@ export default function PullToLoad({
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    let startY = 0;
+    /** Pointer Y at the moment the document hit the bottom. */
+    let bottomY = 0;
+    let reachedBottom = false;
+    let visual = false;
     let raw = 0;
-    let armed = false;
+    let mouse = false;
+
+    const atBottom = () => {
+      const doc = document.scrollingElement ?? document.documentElement;
+      return doc.scrollTop + window.innerHeight >= doc.scrollHeight - 2;
+    };
+
+    const begin = (y: number) => {
+      bottomY = y;
+      reachedBottom = false;
+      visual = false;
+      raw = 0;
+      collapsing.current = false;
+    };
+
+    const resetVisual = () => {
+      el.style.transform = "translate3d(0, 0, 0)";
+      arcRef.current?.setAttribute("stroke-dashoffset", "100");
+      if (indicatorRef.current) indicatorRef.current.style.opacity = "0";
+      visual = false;
+      raw = 0;
+    };
 
     const paint = (dy: number) => {
       const p = Math.max(0, Math.min(1, dy / TRIGGER_DY));
@@ -89,45 +111,55 @@ export default function PullToLoad({
       }
     };
 
-    const onMove = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      const dy = e.touches[0].clientY - startY;
-      if (!armed) {
-        if (dy <= TOUCH_SLOP) return;
-        armed = true;
-        if (el) el.style.transition = "none";
+    // Scrolling down to the end moves the finger UP. Once the document is at
+    // the bottom, keep going UP to expose the indicator below the list.
+    const move = (y: number, e: Event) => {
+      if (!reachedBottom) {
+        if (!atBottom()) return;
+        reachedBottom = true;
+        bottomY = y;
       }
-      if (dy <= 0) {
-        if (el) el.style.transform = "translate3d(0, 0, 0)";
-        paint(0);
-        raw = 0;
+      const dy = bottomY - y;
+      if (dy <= TOUCH_SLOP) {
+        if (visual) resetVisual();
+        // Scrolled back away from the bottom: hand control to the browser.
+        if (!atBottom()) reachedBottom = false;
         return;
       }
+      visual = true;
+      el.style.transition = "none";
       raw = dy;
-      if (el) el.style.transform = `translate3d(0, ${damped(dy).toFixed(1)}px, 0)`;
+      el.style.transform = `translate3d(0, -${damped(dy).toFixed(1)}px, 0)`;
       paint(dy);
       // Only cancel the browser's own overscroll once the gesture is ours.
       if (e.cancelable) e.preventDefault();
     };
 
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) move(e.touches[0].clientY, e);
+    };
+    const onMouseMove = (e: MouseEvent) => move(e.clientY, e);
+
     const detach = () => {
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
-      el.removeEventListener("touchcancel", onEnd);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", end);
+      el.removeEventListener("touchcancel", end);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", end);
     };
 
-    const onEnd = () => {
+    const end = () => {
       detach();
-      if (!armed) return;
-      armed = false;
+      if (!visual) return;
       const shouldTrigger = raw >= TRIGGER_DY && !disabledRef.current;
       raw = 0;
+      visual = false;
+      reachedBottom = false;
+      mouse = false;
       if (shouldTrigger) {
         // Hold at the trigger while the caller loads, like a refresh spinner.
-        if (el) {
-          el.style.transition = `transform ${RETURN_MS}ms ${RETURN_EASE}`;
-          el.style.transform = `translate3d(0, ${damped(TRIGGER_DY).toFixed(1)}px, 0)`;
-        }
+        el.style.transition = `transform ${RETURN_MS}ms ${RETURN_EASE}`;
+        el.style.transform = `translate3d(0, -${damped(TRIGGER_DY).toFixed(1)}px, 0)`;
         paint(TRIGGER_DY);
         setLoading(true);
         triggerRef.current();
@@ -136,30 +168,28 @@ export default function PullToLoad({
       }
     };
 
-    const onStart = (e: TouchEvent) => {
+    const onTouchStart = (e: TouchEvent) => {
       if (disabledRef.current || e.touches.length !== 1) return;
-      const doc = document.scrollingElement ?? document.documentElement;
-      const atBottom = doc.scrollTop + window.innerHeight >= doc.scrollHeight - 2;
-      if (!atBottom || Date.now() - lastScroll.current < MOMENTUM_GUARD_MS) return;
-      startY = e.touches[0].clientY;
-      raw = 0;
-      armed = false;
-      collapsing.current = false;
-      el.addEventListener("touchmove", onMove, { passive: false });
-      el.addEventListener("touchend", onEnd);
-      el.addEventListener("touchcancel", onEnd);
+      begin(e.touches[0].clientY);
+      el.addEventListener("touchmove", onTouchMove, { passive: false });
+      el.addEventListener("touchend", end);
+      el.addEventListener("touchcancel", end);
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      if (disabledRef.current || e.button !== 0) return;
+      begin(e.clientY);
+      mouse = true;
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", end);
     };
 
-    const onScroll = () => {
-      lastScroll.current = Date.now();
-    };
-
-    el.addEventListener("touchstart", onStart, { passive: true });
-    window.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("mousedown", onMouseDown);
     return () => {
       detach();
-      el.removeEventListener("touchstart", onStart);
-      window.removeEventListener("scroll", onScroll);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("mousedown", onMouseDown);
+      if (mouse) window.removeEventListener("mouseup", end);
     };
   }, []);
 
