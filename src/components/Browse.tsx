@@ -11,9 +11,9 @@ import {
 import type { Item, SearchResult } from "@/lib/types";
 import {
   BROWSE_PAGE_CAP,
-  deepestPage,
   flattenPages,
-  nextPage,
+  nextSharedPage,
+  sharedDepth,
   uniqueResults,
   type PagedResults,
 } from "@/lib/paged";
@@ -32,9 +32,8 @@ const SHELVES: { key: Category; label: string; hint: string }[] = [
 
 /** Page slots per category, kept across search-query changes and tab switches. */
 const cache = new Map<Category, PagedResults>();
-/** One request per category:page, shared by pulls, prefetch and catch-up. */
+/** One request per category:page, shared by the pull and the button. */
 const inflight = new Map<string, Promise<void>>();
-const failed = new Set<string>();
 
 /** Column margin; must match `mr-2.5` in the markup. */
 const GAP = 10;
@@ -69,7 +68,7 @@ export default function Browse({
   /** Drag past the first/last column moves to the adjacent tab instead. */
   onOverscroll?: (dir: 1 | -1) => void;
 }) {
-  const [revision, bump] = useReducer((n: number) => n + 1, 0);
+  const [, bump] = useReducer((n: number) => n + 1, 0);
   const [active, setActive] = useState(0);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const colRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -79,10 +78,10 @@ export default function Browse({
   /** Fetch one page, deduping every caller through the same promise. */
   const loadPage = useCallback(
     async (key: Category, page: number) => {
+      if (cache.get(key)?.pages[page]) return;
       const id = keyOf(key, page);
       const running = inflight.get(id);
       if (running) return running;
-      failed.delete(id);
       const task = (async () => {
         try {
           const res = await fetch(`/api/tmdb/browse?category=${key}&page=${page}`);
@@ -98,7 +97,7 @@ export default function Browse({
             totalPages: json.totalPages,
           });
         } catch {
-          failed.add(id);
+          /* Leave the slot empty so the next pull/button retries this page. */
         } finally {
           inflight.delete(id);
           bump();
@@ -114,26 +113,9 @@ export default function Browse({
   // First page for every column. Cached columns skip the request entirely.
   useEffect(() => {
     for (const shelf of SHELVES) {
-      if (!cache.get(shelf.key)?.pages[1] && !failed.has(keyOf(shelf.key, 1))) {
-        void loadPage(shelf.key, 1);
-      }
+      if (!cache.get(shelf.key)?.pages[1]) void loadPage(shelf.key, 1);
     }
   }, [loadPage]);
-
-  // When a column comes into view behind the deepest one, fill the gap in parallel.
-  const deepest = deepestPage(cache);
-  useEffect(() => {
-    const key = SHELVES[active].key;
-    const shelf = cache.get(key);
-    if (!shelf) return;
-    const target = Math.min(deepest, BROWSE_PAGE_CAP, shelf.totalPages || 0);
-    const missing: number[] = [];
-    for (let page = 1; page <= target; page++) {
-      if (!shelf.pages[page] && !failed.has(keyOf(key, page))) missing.push(page);
-    }
-    if (!missing.length) return;
-    void Promise.all(missing.slice(0, 4).map((page) => loadPage(key, page)));
-  }, [active, revision, deepest, loadPage]);
 
   const step = () => (colRefs.current[0]?.offsetWidth ?? 0) + GAP;
 
@@ -196,36 +178,25 @@ export default function Browse({
     [onOpen],
   );
 
-  const activeKey = SHELVES[active].key;
-  const activeShelf = cache.get(activeKey);
-  const activeNext = nextPage(activeShelf, BROWSE_PAGE_CAP);
-  const canPull = activeNext !== null;
-  const activeLoading = activeNext !== null && inflight.has(keyOf(activeKey, activeNext));
+  // Every column advances together, so a pull can never leave one shelf long
+  // and the rest short. Rendering is gated on the depth shared by all five.
+  const shelves = SHELVES.map((s) => cache.get(s.key));
+  const depth = sharedDepth(shelves);
+  const next = nextSharedPage(shelves);
+  const loading = next !== null && SHELVES.some((s) => inflight.has(keyOf(s.key, next)));
+  const canPull = next !== null && !loading;
 
-  /** A pull loads the active column, then quietly prefetches the next one. */
-  const loadActive = useCallback(async () => {
-    const key = SHELVES[active].key;
-    const next = nextPage(cache.get(key), BROWSE_PAGE_CAP);
-    if (next === null) return;
-    await loadPage(key, next);
-    const following = SHELVES[active + 1];
-    if (following) {
-      const prefetch = nextPage(cache.get(following.key), BROWSE_PAGE_CAP);
-      if (prefetch !== null) void loadPage(following.key, prefetch);
-    }
-  }, [active, loadPage]);
-
-  // Skeleton gap for the active column while catch-up pages arrive.
-  const gap: number[] = [];
-  if (activeShelf?.pages[1]) {
-    const target = Math.min(deepest, BROWSE_PAGE_CAP, activeShelf.totalPages || 0);
-    for (let page = 2; page <= target; page++) {
-      if (!activeShelf.pages[page] && !failed.has(keyOf(activeKey, page))) gap.push(page);
-    }
-  }
+  /** One pull/button press loads the same next page for all five columns. */
+  const loadShared = useCallback(async () => {
+    const page = nextSharedPage(SHELVES.map((s) => cache.get(s.key)));
+    if (page === null) return;
+    await Promise.all(
+      SHELVES.filter((s) => !cache.get(s.key)?.pages[page]).map((s) => loadPage(s.key, page)),
+    );
+  }, [loadPage]);
 
   return (
-    <PullUpToLoad canLoad={canPull} onLoad={loadActive} resetKey={active}>
+    <PullUpToLoad canLoad={canPull} onLoad={loadShared} resetKey={active}>
       <div className="pt-3">
         <div
           ref={viewportRef}
@@ -241,10 +212,10 @@ export default function Browse({
           <div className="w-4 shrink-0" aria-hidden />
           {SHELVES.map((s, index) => {
             const shelf = cache.get(s.key);
-            const list = flattenPages(shelf, BROWSE_PAGE_CAP);
+            // `depth` is the page count every column has committed, so all five
+            // columns reveal a new page at the same time and stay the same length.
+            const list = flattenPages(shelf, depth);
             const initial = !shelf?.pages[1];
-            const initialFailed = failed.has(keyOf(s.key, 1));
-            const isActive = index === active;
             return (
               <div
                 key={s.key}
@@ -259,56 +230,42 @@ export default function Browse({
                   <span className="text-[10px] text-faint">{s.hint}</span>
                 </div>
                 {initial ? (
-                  initialFailed ? (
-                    <div className="py-8 text-center">
-                      <p className="text-xs text-faint">Couldn&apos;t load this column</p>
-                      <button
-                        data-pull-allow-click
-                        onClick={() => void loadPage(s.key, 1)}
-                        className="mt-3 h-9 rounded-full bg-surface px-4 text-[13px] text-dim active:bg-raised"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  ) : (
-                    <SkeletonRows count={6} />
-                  )
+                  <SkeletonRows count={6} />
                 ) : list.length ? (
-                  <>
-                    {list.map((r) => {
-                      const id = `${r.type}-${r.tmdbId}`;
-                      return <MediaRow key={id} result={r} have={tracked.get(id)} onOpen={openFromRow} />;
-                    })}
-                    {isActive && gap.length ? <SkeletonRows count={gap.length * 20} /> : null}
-                    {isActive ? (
-                      <div className="pt-3 pr-3 text-center">
-                        {activeNext === null ? (
-                          <p className="text-xs text-faint">No more in {s.label}</p>
-                        ) : activeLoading ? (
-                          <p role="status" className="text-xs text-faint">
-                            Loading more…
-                          </p>
-                        ) : (
-                          <button
-                            data-pull-allow-click
-                            onClick={() => void loadActive()}
-                            className="h-10 rounded-full bg-surface px-4 text-[13px] text-dim active:bg-raised"
-                          >
-                            Load more in {s.label}
-                          </button>
-                        )}
-                      </div>
-                    ) : null}
-                  </>
+                  list.map((r) => {
+                    const id = `${r.type}-${r.tmdbId}`;
+                    return <MediaRow key={id} result={r} have={tracked.get(id)} onOpen={openFromRow} />;
+                  })
                 ) : (
                   <p className="py-8 text-xs text-faint">Nothing to show right now</p>
                 )}
+                {/* Equal skeletons in every column while the shared page arrives. */}
+                {loading && !initial ? <SkeletonRows count={6} /> : null}
               </div>
             );
           })}
           {/* Lets the last column align to the scrollport start under snap. */}
           <div className="w-[18%] shrink-0" aria-hidden />
         </div>
+
+        {/* One control for all columns, outside the carousel — no per-column buttons. */}
+        {next !== null ? (
+          <div className="px-4 py-3 text-center">
+            {loading ? (
+              <p role="status" className="text-xs text-faint">
+                Loading more…
+              </p>
+            ) : (
+              <button
+                data-pull-allow-click
+                onClick={() => void loadShared()}
+                className="h-10 rounded-full bg-surface px-4 text-[13px] text-dim active:bg-raised"
+              >
+                Load more
+              </button>
+            )}
+          </div>
+        ) : null}
 
         <div className="browse-dots pointer-events-none sticky bottom-[calc(env(safe-area-inset-bottom)+76px)] z-20 flex justify-center py-3">
           <div className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 backdrop-blur-sm">

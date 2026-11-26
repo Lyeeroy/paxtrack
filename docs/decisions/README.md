@@ -33,3 +33,4 @@ Write about *why*, not *what* — the code already says what. Update the status 
 - [0007 — Sheet interaction contract](./0007-sheet-interaction-contract.md) — the reusable sheet's dismissal, detents, drag, focus and motion rules.
 - [0008 — Browse uses native scroll-snap, not a JS pager](./0008-native-scroll-snap-pager.md) — why momentum is the browser's job and `<main>` must allow `pan-x`; do not reintroduce a JS fling.
 - [0009 — Deliberate bottom-pull pagination](./0009-deliberate-bottom-pull-pagination.md) — why auto-load was removed, how the pull takes over, and the 5-page Browse cap with skeleton catch-up.
+- [0010 — Balanced Browse pagination](./0010-balanced-browse-pagination.md) — why pages load in lockstep across all five columns and why cross-page TMDB duplicates are kept.

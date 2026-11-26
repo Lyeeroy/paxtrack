@@ -1,7 +1,7 @@
 # 0009 — Deliberate bottom-pull pagination
 
 - Date: 2026-11-26
-- Status: accepted
+- Status: accepted — Browse page scheduling is superseded by [ADR 0010](./0010-balanced-browse-pagination.md); the gesture and the removal of auto-load still stand.
 
 ## Context
 
