@@ -20,6 +20,13 @@ const MAX_LIFT = 120;
 const SPRING_MS = 180;
 const RING_RADIUS = 19;
 const RING = 2 * Math.PI * RING_RADIUS;
+/** The detail ring rolls in from above the viewport over this distance. */
+const ROLL_DISTANCE = 120;
+const ROLL_DEGREES_PER_PX = 2.6;
+
+function hiddenTransform(down: boolean) {
+  return down ? `translate(-50%, -${ROLL_DISTANCE}px) rotate(0deg) scale(0.8)` : "translate(-50%, 0) scale(0.8)";
+}
 
 function atBottom() {
   const doc = document.documentElement;
@@ -132,7 +139,7 @@ export default function PullUpToLoad({
       ind.style.transition = "";
       ind.style.visibility = "hidden";
       ind.style.opacity = "0";
-      ind.style.transform = "translate(-50%, 0) scale(0.8)";
+      ind.style.transform = hiddenTransform(directionRef.current === "down");
     }
     const ring = ringRef.current;
     if (ring) ring.style.strokeDashoffset = String(RING);
@@ -169,7 +176,7 @@ export default function PullUpToLoad({
       if (ind) {
         ind.style.transition = `opacity 140ms ease-out, transform ${SPRING_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
         ind.style.opacity = "0";
-        ind.style.transform = "translate(-50%, 0) scale(0.8)";
+        ind.style.transform = hiddenTransform(directionRef.current === "down");
       }
       springTimer.current = window.setTimeout(() => {
         springTimer.current = undefined;
@@ -266,8 +273,10 @@ export default function PullUpToLoad({
       const ind = indicatorRef.current;
       if (ind) {
         const opacity = Math.min(1, Math.max(0, (raw - SLOP) / 24));
-        ind.style.opacity = String(opacity);
-        ind.style.transform = `translate(-50%, 0) scale(${0.8 + 0.2 * opacity})`;
+        const scale = 0.8 + 0.2 * opacity;
+        ind.style.transform = down
+          ? `translate(-50%, ${-ROLL_DISTANCE * (1 - progress)}px) rotate(${Math.min(raw, TRIGGER) * ROLL_DEGREES_PER_PX}deg) scale(${scale})`
+          : `translate(-50%, 0) scale(${scale})`;
         const aria = Math.round(progress * 4) * 25;
         if (aria !== d.aria) {
           d.aria = aria;
@@ -293,6 +302,12 @@ export default function PullUpToLoad({
         haptic(10);
         busyRef.current = true;
         const token = ++loadToken.current;
+        // The spinner starts upright at the resting spot, not mid-roll.
+        const ind = indicatorRef.current;
+        if (ind && isDown()) {
+          ind.style.transition = `transform ${SPRING_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+          ind.style.transform = "translate(-50%, 0) rotate(0deg) scale(1)";
+        }
         if (aliveRef.current) setBusy(true);
         void onLoadRef
           .current()
