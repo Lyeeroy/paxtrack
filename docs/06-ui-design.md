@@ -26,6 +26,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 | Drag horizontally | Screen (outside swipe rows/inputs) | Switch tabs |
 | Drag past the first/last browse column | Search landing (Discover / In cinema) | Switch to the previous/next tab; the track is clamped so no blank space is revealed |
 | Drag up at the bottom | Search results / Browse (all columns) | Pull past 96 px to load the next page; the page follows the finger and a 44 px accent ring fills |
+| Drag down at the top | Detail view | Open the info sheet; the same ring fills over 96 px |
 | Drag from left edge | Detail view | Go back / close detail |
 | Tap twice | Remove button | Confirm removal |
 | Tap active status | Detail status buttons | Remove from library (toast; detail stays open, pick a status to re-add). With watched progress, the first tap arms a 3 s confirmation instead |
@@ -37,6 +38,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 
 - The threshold is 72 px (70 px for tab and edge swipes). The sheet has its own proportional threshold: 25% of the panel height, clamped to 64–180 px, or a downward flick over 0.35 px/ms. Each gesture moves one detent — up from the header expands, down from expanded collapses, down from collapsed dismisses. Upward drags from content stay with scrolling. Drag transforms and detent heights are written straight to the DOM with no React re-render so motion stays cheap on budget phones; `haptic()` fires on completion.
 - Pull-to-load starts only when the document is already at the bottom, after 8 px of touch slop, and only for a mostly vertical drag. The page lifts at 0.55× finger travel (max 120 px); a 3 px accent ring on a 44 px circle fills over 96 px and the haptic fires when it is full. Release below the threshold springs back over 180 ms. The gesture never starts while the search input is focused, and a short page whose header is still visible keeps the tap fallback instead of sliding under the field.
+- Detail reuses the same gesture inverted: at `scrollTop ≈ 0`, dragging down lifts the content, fills the ring with “open details” labels, and opens the info sheet at the threshold. The indicator sits below the sticky header between the detail (`z-40`) and the sheet (`z-45`). The poster/title tap remains the non-gesture path.
 - A revealed action is always mirrored by a tap control (the `+` button, status buttons, the back button). **Gestures accelerate; they never gate.** Every gesture must have a non-gesture path.
 - Rows inside swipe containers keep `data-swipe` so the screen-level tab swipe ignores them; inputs and textareas are excluded the same way.
 
@@ -132,7 +134,7 @@ Reuse these before creating anything new:
 
 ## Accessibility is part of the style
 
-The accessible markup is not an add-on; it is how these components are built. Keep: `aria-label` on icon-only buttons, `aria-current` on the active tab, `role="tablist"`/`tab"` where used, `aria-pressed` on episode toggles, `aria-checked` on status radios, `aria-live` for sync status and toasts, `role="dialog"` on the detail view and the sheet, and `role="progressbar"` with aria values. The pull ring is a `progressbar` whose `aria-valuenow` only updates at 0/25/50/75/100, the busy state is a polite status, and from the `sm` breakpoint up every pull has the Load more button as the non-gesture path (phones are pull-only by design). Content is `aria-hidden` while the detail view is open; the detail is `aria-hidden` and the main content is `inert` while the sheet is open. The sheet moves focus in, traps Tab, restores focus on close, and always has a 44×44 close button as the non-gesture path. The app also respects safe-area insets and `prefers-reduced-motion`.
+The accessible markup is not an add-on; it is how these components are built. Keep: `aria-label` on icon-only buttons, `aria-current` on the active tab, `role="tablist"`/`tab"` where used, `aria-pressed` on episode toggles, `aria-checked` on status radios, `aria-live` for sync status and toasts, `role="dialog"` on the detail view and the sheet, and `role="progressbar"` with aria values. The pull ring is a `progressbar` whose `aria-valuenow` only updates at 0/25/50/75/100, the busy state is a polite status, and from the `sm` breakpoint up every pull-to-load has the Load more button as the non-gesture path (phones are pull-only by design); the detail pull has the poster/title button and the sheet has a 44×44 close button. Content is `aria-hidden` while the detail view is open; the detail is `aria-hidden` and the main content is `inert` while the sheet is open. The sheet moves focus in, traps Tab, restores focus on close, and always has a 44×44 close button as the non-gesture path. The app also respects safe-area insets and `prefers-reduced-motion`.
 
 ## Checklist for new UI
 

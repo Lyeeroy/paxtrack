@@ -34,3 +34,4 @@ Write about *why*, not *what* — the code already says what. Update the status 
 - [0008 — Browse uses native scroll-snap, not a JS pager](./0008-native-scroll-snap-pager.md) — why momentum is the browser's job and `<main>` must allow `pan-x`; do not reintroduce a JS fling.
 - [0009 — Deliberate bottom-pull pagination](./0009-deliberate-bottom-pull-pagination.md) — why auto-load was removed, how the pull takes over, and the 5-page Browse cap with skeleton catch-up.
 - [0010 — Balanced Browse pagination](./0010-balanced-browse-pagination.md) — why pages load in lockstep across all five columns and why cross-page TMDB duplicates are kept.
+- [0011 — Pull down opens the detail info sheet](./0011-pull-down-opens-detail-sheet.md) — reusing the pull gesture inverted, with the indicator layered between detail and sheet.

@@ -96,6 +96,13 @@ button {
   transform: translate(-50%, 0) scale(0.8);
 }
 
+/* Detail's pull-down: below the sticky header, above the detail, below the sheet. */
+.pull-indicator-top {
+  bottom: auto;
+  top: calc(env(safe-area-inset-top) + 72px);
+  z-index: 42;
+}
+
 /* The dots are sticky inside the transformed subtree; fade them while pulling. */
 .browse-dots {
   transition: opacity 140ms ease-out;

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { haptic } from "@/lib/toast";
 
@@ -17,6 +24,11 @@ const RING = 2 * Math.PI * RING_RADIUS;
 function atBottom() {
   const doc = document.documentElement;
   return window.scrollY + window.innerHeight >= doc.scrollHeight - 2;
+}
+
+function atTop(scrollRef: RefObject<HTMLElement | null> | undefined) {
+  const el = scrollRef?.current;
+  return el ? el.scrollTop <= 1 : window.scrollY <= 1;
 }
 
 function isTyping() {
@@ -52,6 +64,10 @@ export default function PullUpToLoad({
   onLoad,
   resetKey,
   className,
+  direction = "up",
+  scrollRef,
+  actionLabel = "load more",
+  busyLabel = "Loading more",
   children,
 }: {
   canLoad: boolean;
@@ -59,6 +75,13 @@ export default function PullUpToLoad({
   /** Changing this (tab/column/query) cancels any in-progress pull. */
   resetKey?: string | number;
   className?: string;
+  /** `up` pulls from the document bottom; `down` pulls from a scroll container's top. */
+  direction?: "up" | "down";
+  /** Scroll container for `down`; defaults to the document. */
+  scrollRef?: RefObject<HTMLElement | null>;
+  /** Used in the progressbar's aria labels. */
+  actionLabel?: string;
+  busyLabel?: string;
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -72,6 +95,9 @@ export default function PullUpToLoad({
   const loadToken = useRef(0);
   const canLoadRef = useRef(canLoad);
   const onLoadRef = useRef(onLoad);
+  const directionRef = useRef(direction);
+  const scrollRefRef = useRef(scrollRef);
+  const labelsRef = useRef({ actionLabel, busyLabel });
   const [mounted, setMounted] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -88,6 +114,9 @@ export default function PullUpToLoad({
   useEffect(() => {
     canLoadRef.current = canLoad;
     onLoadRef.current = onLoad;
+    directionRef.current = direction;
+    scrollRefRef.current = scrollRef;
+    labelsRef.current = { actionLabel, busyLabel };
   });
 
   const clearSpring = useCallback(() => {
@@ -156,14 +185,19 @@ export default function PullUpToLoad({
     const el = rootRef.current;
     if (!el) return;
 
+    const isDown = () => directionRef.current === "down";
+    const scrollPos = () =>
+      isDown() ? (scrollRefRef.current?.current?.scrollTop ?? window.scrollY) : window.scrollY;
+    const atEdge = () => (isDown() ? atTop(scrollRefRef.current) : atBottom());
+
     const onStart = (e: TouchEvent) => {
       if (e.touches.length !== 1 || busyRef.current || !canLoadRef.current) return;
-      if (isTyping() || !atBottom()) return;
+      if (isTyping() || !atEdge()) return;
       const t = e.touches[0];
       drag.current = {
         x: t.clientX,
         y: t.clientY,
-        scroll: window.scrollY,
+        scroll: scrollPos(),
         claimed: false,
         raw: 0,
         progress: 0,
@@ -182,17 +216,18 @@ export default function PullUpToLoad({
       const dx = t.clientX - d.x;
       const dy = t.clientY - d.y;
 
+      const down = isDown();
       if (!d.claimed) {
-        // A fling still settling into the bottom, or a downward drag, is not ours.
-        if (Math.abs(window.scrollY - d.scroll) > 1 || dy >= 0) return;
+        // A fling still settling into the edge, or a drag away from it, is not ours.
+        if (Math.abs(scrollPos() - d.scroll) > 1 || (down ? dy <= 0 : dy >= 0)) return;
         if (Math.abs(dy) < SLOP || Math.abs(dx) > Math.abs(dy)) return;
-        if (!atBottom()) {
+        if (!atEdge()) {
           drag.current = null;
           return;
         }
         // A short page still shows the header above this wrapper; sliding it up
         // would put content under the search field. Use the button there instead.
-        if (el.getBoundingClientRect().top > 0) return;
+        if (!down && el.getBoundingClientRect().top > 0) return;
         d.claimed = true;
         // The user caught the content mid-spring: cancel its cleanup timer.
         clearSpring();
@@ -212,17 +247,18 @@ export default function PullUpToLoad({
         springBack(true);
         return;
       }
-      if (Math.abs(window.scrollY - d.scroll) > 1) {
+      if (Math.abs(scrollPos() - d.scroll) > 1) {
         springBack(true);
         return;
       }
 
-      const raw = Math.max(0, -dy);
+      const raw = Math.max(0, down ? dy : -dy);
       const progress = Math.min(1, Math.max(0, (raw - SLOP) / (TRIGGER - SLOP)));
       d.raw = raw;
       d.progress = progress;
 
-      el.style.transform = `translate3d(0, ${-Math.min(MAX_LIFT, raw * LIFT_RATIO)}px, 0)`;
+      const lift = Math.min(MAX_LIFT, raw * LIFT_RATIO);
+      el.style.transform = `translate3d(0, ${down ? lift : -lift}px, 0)`;
 
       const ring = ringRef.current;
       if (ring) ring.style.strokeDashoffset = String(RING * (1 - progress));
@@ -237,7 +273,8 @@ export default function PullUpToLoad({
           d.aria = aria;
           const bar = ind.querySelector('[role="progressbar"]');
           bar?.setAttribute("aria-valuenow", String(aria));
-          bar?.setAttribute("aria-label", progress >= 1 ? "Release to load more" : "Pull to load more");
+          const { actionLabel } = labelsRef.current;
+          bar?.setAttribute("aria-label", progress >= 1 ? `Release to ${actionLabel}` : `Pull to ${actionLabel}`);
         }
       }
     };
@@ -248,7 +285,7 @@ export default function PullUpToLoad({
       if (!d?.claimed) return;
       const t = e.changedTouches[0];
       if (t) {
-        const raw = Math.max(0, d.y - t.clientY);
+        const raw = Math.max(0, isDown() ? t.clientY - d.y : d.y - t.clientY);
         d.progress = Math.min(1, Math.max(0, (raw - SLOP) / (TRIGGER - SLOP)));
       }
       suppressUntil.current = Date.now() + 350;
@@ -333,19 +370,19 @@ export default function PullUpToLoad({
       {children}
       {mounted
         ? createPortal(
-            <div ref={indicatorRef} className="pull-indicator">
+            <div ref={indicatorRef} className={`pull-indicator ${direction === "down" ? "pull-indicator-top" : ""}`}>
               {busy ? (
                 <div
                   role="progressbar"
-                  aria-label="Loading more"
-                  aria-valuetext="Loading"
+                  aria-label={busyLabel}
+                  aria-valuetext={busyLabel}
                   className="h-11 w-11 animate-spin rounded-full border-[3px] border-line border-t-accent"
                 />
               ) : (
                 <svg
                   viewBox="0 0 44 44"
                   role="progressbar"
-                  aria-label="Pull to load more"
+                  aria-label={`Pull to ${actionLabel}`}
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-valuenow={0}

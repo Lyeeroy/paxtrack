@@ -1,12 +1,13 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { quickWatch } from "@/lib/actions";
 import { flatEps, formatEp, relDay, statsFor, todayStr, type Ep } from "@/lib/episodes";
 import { cachedInfo, loadInfo, refreshItem, type TitleInfo } from "@/lib/refresh";
 import { markUpTo, removeItem, setSeason, setStatus, toggleEpisode, unmarkFrom } from "@/lib/store";
 import { haptic, showToast } from "@/lib/toast";
 import type { EpData, Item, Status } from "@/lib/types";
+import PullUpToLoad from "./PullUpToLoad";
 import { IconBack, IconCheck, Poster, Progress, Sheet, SwipeRow, TypeTag } from "./ui";
 
 const STATUSES: { id: Status; label: string }[] = [
@@ -97,6 +98,7 @@ export default function Detail({
   const [info, setInfo] = useState<TitleInfo | null>(() => cachedInfo(item.id));
   const [infoResolved, setInfoResolved] = useState(() => !!info);
   const edge = useRef<{ x: number; y: number } | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const today = todayStr();
 
   useEffect(() => {
@@ -118,6 +120,10 @@ export default function Detail({
     };
   }, [infoOpen, info, item]);
 
+  const openInfoFromPull = useCallback(async () => {
+    onOpenInfo();
+  }, [onOpenInfo]);
+
   const st = useMemo(() => statsFor(item, data, today), [item, data, today]);
   const eps = useMemo(() => flatEps(data), [data]);
   const seasons = useMemo(() => [...new Set(eps.map((e) => e.s))], [eps]);
@@ -132,6 +138,7 @@ export default function Detail({
 
   return (
     <div
+      ref={scrollRef}
       className={`anim-slide fixed inset-0 z-40 bg-black ${infoOpen ? "overflow-hidden" : "overflow-y-auto"}`}
       role="dialog"
       aria-label={item.title}
@@ -149,168 +156,178 @@ export default function Detail({
         if (s && e.clientX - s.x > 70 && Math.abs(e.clientY - s.y) < 60) onClose();
       }}
     >
-      <div className="mx-auto max-w-xl pb-[calc(env(safe-area-inset-bottom)+32px)]">
-        <div className="sticky top-0 z-10 flex items-center bg-black/90 px-2 pt-[env(safe-area-inset-top)]">
-          <button onClick={onClose} aria-label="Back" className="flex h-12 w-12 items-center justify-center rounded-full text-fg active:bg-surface">
-            <IconBack />
-          </button>
-          <p className="min-w-0 flex-1 truncate pr-4 text-sm text-dim">{item.title}</p>
-        </div>
-
-        <div className="flex gap-4 px-4 pt-2">
-          <button
-            onClick={onOpenInfo}
-            aria-haspopup="dialog"
-            aria-expanded={infoOpen}
-            aria-label={`Details for ${item.title}`}
-            className="shrink-0 rounded-md active:opacity-80"
-          >
-            <Poster path={item.poster} title={item.title} w={80} h={120} />
-          </button>
-          <div className="min-w-0 flex-1 pt-1">
-            <h1 className="text-xl font-semibold leading-tight">
-              <button onClick={onOpenInfo} aria-haspopup="dialog" aria-expanded={infoOpen} className="max-w-full truncate text-left active:opacity-80">
-                {item.title}
-              </button>
-            </h1>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-dim">
-              <TypeTag anime={item.anime} type={item.type} />
-              {meta.map((m) => (
-                <span key={m}>· {m}</span>
-              ))}
-            </div>
-            <p className="mt-1 text-[11px] text-faint">Tap poster or title for details</p>
-            <div className="mt-4">
-              <div className="mb-1.5 flex justify-between text-xs text-dim">
-                <span>{item.type === "movie" ? (item.watched.m ? "Watched" : "Not watched") : `${st.watched} / ${st.aired || st.total} watched`}</span>
-                <span className="tabular-nums">{Math.round(st.progress * 100)}%</span>
-              </div>
-              <Progress value={st.progress} label="Watch progress" />
-            </div>
+      <PullUpToLoad
+        canLoad={!infoOpen}
+        onLoad={openInfoFromPull}
+        resetKey={infoOpen ? "open" : "closed"}
+        direction="down"
+        scrollRef={scrollRef}
+        actionLabel="open details"
+        busyLabel="Opening details"
+      >
+        <div className="mx-auto max-w-xl pb-[calc(env(safe-area-inset-bottom)+32px)]">
+          <div className="sticky top-0 z-10 flex items-center bg-black/90 px-2 pt-[env(safe-area-inset-top)]">
+            <button onClick={onClose} aria-label="Back" className="flex h-12 w-12 items-center justify-center rounded-full text-fg active:bg-surface">
+              <IconBack />
+            </button>
+            <p className="min-w-0 flex-1 truncate pr-4 text-sm text-dim">{item.title}</p>
           </div>
-        </div>
-
-        <div role="radiogroup" aria-label="Status" className="mt-5 grid grid-cols-4 gap-1 px-4">
-          {STATUSES.map((s) => {
-            const active = !item.preview && item.status === s.id;
-            const armed = active && confirmUntrack;
-            return (
-              <button
-                key={s.id}
-                role="radio"
-                aria-checked={active}
-                onClick={() => {
-                  if (active && st.watched > 0 && !confirmUntrack) {
-                    setConfirmUntrack(true);
-                    setTimeout(() => setConfirmUntrack(false), 3000);
-                    return;
-                  }
-                  setConfirmUntrack(false);
-                  if (active) onUntrack(item);
-                  else setStatus(item.id, s.id);
-                }}
-                className={`h-10 rounded-lg text-[13px] ${
-                  armed ? "bg-danger/15 text-danger" : active ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"
-                }`}
-              >
-                {armed ? "Tap again" : s.label}
-              </button>
-            );
-          })}
-        </div>
-        {confirmUntrack && st.watched > 0 ? (
-          <p role="status" className="px-4 pt-2 text-center text-xs text-danger">
-            Removing this title deletes your watch history
-            {item.type === "movie" ? "" : ` · ${st.watched} episode${st.watched === 1 ? "" : "s"} watched`}. Tap the active status again to confirm.
-          </p>
-        ) : null}
-
-        <div className="px-4 pt-3">
-          {item.type === "movie" ? (
+  
+          <div className="flex gap-4 px-4 pt-2">
             <button
-              onClick={() => toggleEpisode(item.id, "m")}
-              className={`h-12 w-full rounded-xl text-[15px] font-semibold active:opacity-80 ${item.watched.m ? "bg-surface text-accent" : "bg-accent text-black"}`}
+              onClick={onOpenInfo}
+              aria-haspopup="dialog"
+              aria-expanded={infoOpen}
+              aria-label={`Details for ${item.title}`}
+              className="shrink-0 rounded-md active:opacity-80"
             >
-              {item.watched.m ? "Watched · tap to undo" : "Mark as watched"}
+              <Poster path={item.poster} title={item.title} w={80} h={120} />
             </button>
-          ) : (
-            <button
-              onClick={() => quickWatch(item, data)}
-              disabled={!st.next}
-              className="h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-black active:opacity-80 disabled:bg-surface disabled:font-normal disabled:text-dim"
-            >
-              {!data
-                ? "Loading episodes…"
-                : st.next
-                  ? `Watch ${formatEp(st.next)}`
-                  : st.upcoming?.air
-                    ? `Next: ${formatEp(st.upcoming)} · ${relDay(st.upcoming.air)}`
-                    : "All caught up"}
-            </button>
-          )}
-        </div>
-
-        {item.type === "tv" ? (
-          <>
-            {seasons.length ? (
-              <div className="no-scrollbar mt-5 flex gap-1.5 overflow-x-auto px-4" role="tablist" aria-label="Seasons">
-                {seasons.map((n) => (
-                  <button
-                    key={n}
-                    role="tab"
-                    aria-selected={n === current}
-                    onClick={() => setSeasonSel(n)}
-                    className={`h-9 shrink-0 rounded-full px-3.5 text-[13px] ${n === current ? "bg-raised text-fg" : "text-dim active:bg-surface"}`}
-                  >
-                    Season {n}
-                  </button>
+            <div className="min-w-0 flex-1 pt-1">
+              <h1 className="text-xl font-semibold leading-tight">
+                <button onClick={onOpenInfo} aria-haspopup="dialog" aria-expanded={infoOpen} className="max-w-full truncate text-left active:opacity-80">
+                  {item.title}
+                </button>
+              </h1>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-dim">
+                <TypeTag anime={item.anime} type={item.type} />
+                {meta.map((m) => (
+                  <span key={m}>· {m}</span>
                 ))}
               </div>
-            ) : null}
-
-            {list.length ? (
-              <div className="mt-2">
-                <div className="flex items-center justify-between px-4 pb-1 pt-2">
-                  <p className="text-[11px] uppercase tracking-wider text-faint">
-                    {list.filter((e) => item.watched[e.key]).length} / {list.length}
-                  </p>
-                  <button onClick={() => setSeason(item.id, current, !seasonDone)} className="h-9 rounded-full px-3 text-xs text-accent active:bg-surface">
-                    {seasonDone ? "Clear season" : "Mark season watched"}
-                  </button>
+              <p className="mt-1 text-[11px] text-faint">Tap poster or title for details</p>
+              <div className="mt-4">
+                <div className="mb-1.5 flex justify-between text-xs text-dim">
+                  <span>{item.type === "movie" ? (item.watched.m ? "Watched" : "Not watched") : `${st.watched} / ${st.aired || st.total} watched`}</span>
+                  <span className="tabular-nums">{Math.round(st.progress * 100)}%</span>
                 </div>
-                <ul>
-                  {list.map((e) => (
-                    <EpRow key={e.key} id={item.id} ep={e} watched={!!item.watched[e.key]} aired={!!e.air && e.air <= today} />
-                  ))}
-                </ul>
-                <p className="px-6 pt-4 text-center text-[11px] text-faint">Tap to toggle · swipe → mark up to here · ← clear from here</p>
+                <Progress value={st.progress} label="Watch progress" />
               </div>
-            ) : data ? (
-              <p className="px-6 py-10 text-center text-sm text-dim">No episode data yet.</p>
+            </div>
+          </div>
+  
+          <div role="radiogroup" aria-label="Status" className="mt-5 grid grid-cols-4 gap-1 px-4">
+            {STATUSES.map((s) => {
+              const active = !item.preview && item.status === s.id;
+              const armed = active && confirmUntrack;
+              return (
+                <button
+                  key={s.id}
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    if (active && st.watched > 0 && !confirmUntrack) {
+                      setConfirmUntrack(true);
+                      setTimeout(() => setConfirmUntrack(false), 3000);
+                      return;
+                    }
+                    setConfirmUntrack(false);
+                    if (active) onUntrack(item);
+                    else setStatus(item.id, s.id);
+                  }}
+                  className={`h-10 rounded-lg text-[13px] ${
+                    armed ? "bg-danger/15 text-danger" : active ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"
+                  }`}
+                >
+                  {armed ? "Tap again" : s.label}
+                </button>
+              );
+            })}
+          </div>
+          {confirmUntrack && st.watched > 0 ? (
+            <p role="status" className="px-4 pt-2 text-center text-xs text-danger">
+              Removing this title deletes your watch history
+              {item.type === "movie" ? "" : ` · ${st.watched} episode${st.watched === 1 ? "" : "s"} watched`}. Tap the active status again to confirm.
+            </p>
+          ) : null}
+  
+          <div className="px-4 pt-3">
+            {item.type === "movie" ? (
+              <button
+                onClick={() => toggleEpisode(item.id, "m")}
+                className={`h-12 w-full rounded-xl text-[15px] font-semibold active:opacity-80 ${item.watched.m ? "bg-surface text-accent" : "bg-accent text-black"}`}
+              >
+                {item.watched.m ? "Watched · tap to undo" : "Mark as watched"}
+              </button>
             ) : (
-              <p className="px-6 py-10 text-center text-sm text-dim">Episodes load when you&apos;re online.</p>
+              <button
+                onClick={() => quickWatch(item, data)}
+                disabled={!st.next}
+                className="h-12 w-full rounded-xl bg-accent text-[15px] font-semibold text-black active:opacity-80 disabled:bg-surface disabled:font-normal disabled:text-dim"
+              >
+                {!data
+                  ? "Loading episodes…"
+                  : st.next
+                    ? `Watch ${formatEp(st.next)}`
+                    : st.upcoming?.air
+                      ? `Next: ${formatEp(st.upcoming)} · ${relDay(st.upcoming.air)}`
+                      : "All caught up"}
+              </button>
             )}
-          </>
-        ) : null}
-
-        <div className="px-4 pt-10">
-          <button
-            onClick={() => {
-              if (!confirm) {
-                setConfirm(true);
-                setTimeout(() => setConfirm(false), 3000);
-                return;
-              }
-              removeItem(item.id);
-              showToast(`${item.title} removed`);
-              onClose();
-            }}
-            className={`h-11 w-full rounded-xl text-sm active:bg-surface ${confirm ? "bg-danger/15 text-danger" : "text-faint"}`}
-          >
-            {confirm ? "Tap again to remove" : "Remove from library"}
-          </button>
+          </div>
+  
+          {item.type === "tv" ? (
+            <>
+              {seasons.length ? (
+                <div className="no-scrollbar mt-5 flex gap-1.5 overflow-x-auto px-4" role="tablist" aria-label="Seasons">
+                  {seasons.map((n) => (
+                    <button
+                      key={n}
+                      role="tab"
+                      aria-selected={n === current}
+                      onClick={() => setSeasonSel(n)}
+                      className={`h-9 shrink-0 rounded-full px-3.5 text-[13px] ${n === current ? "bg-raised text-fg" : "text-dim active:bg-surface"}`}
+                    >
+                      Season {n}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+  
+              {list.length ? (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between px-4 pb-1 pt-2">
+                    <p className="text-[11px] uppercase tracking-wider text-faint">
+                      {list.filter((e) => item.watched[e.key]).length} / {list.length}
+                    </p>
+                    <button onClick={() => setSeason(item.id, current, !seasonDone)} className="h-9 rounded-full px-3 text-xs text-accent active:bg-surface">
+                      {seasonDone ? "Clear season" : "Mark season watched"}
+                    </button>
+                  </div>
+                  <ul>
+                    {list.map((e) => (
+                      <EpRow key={e.key} id={item.id} ep={e} watched={!!item.watched[e.key]} aired={!!e.air && e.air <= today} />
+                    ))}
+                  </ul>
+                  <p className="px-6 pt-4 text-center text-[11px] text-faint">Tap to toggle · swipe → mark up to here · ← clear from here</p>
+                </div>
+              ) : data ? (
+                <p className="px-6 py-10 text-center text-sm text-dim">No episode data yet.</p>
+              ) : (
+                <p className="px-6 py-10 text-center text-sm text-dim">Episodes load when you&apos;re online.</p>
+              )}
+            </>
+          ) : null}
+  
+          <div className="px-4 pt-10">
+            <button
+              onClick={() => {
+                if (!confirm) {
+                  setConfirm(true);
+                  setTimeout(() => setConfirm(false), 3000);
+                  return;
+                }
+                removeItem(item.id);
+                showToast(`${item.title} removed`);
+                onClose();
+              }}
+              className={`h-11 w-full rounded-xl text-sm active:bg-surface ${confirm ? "bg-danger/15 text-danger" : "text-faint"}`}
+            >
+              {confirm ? "Tap again to remove" : "Remove from library"}
+            </button>
+          </div>
         </div>
-      </div>
+      </PullUpToLoad>
 
       <Sheet open={infoOpen} onClose={onCloseInfo} title={item.title} subtitle="Details">
         <div className="px-4 pb-4 pt-1">
