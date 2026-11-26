@@ -20,8 +20,8 @@ const MAX_LIFT = 120;
 const SPRING_MS = 180;
 const RING_RADIUS = 19;
 const RING = 2 * Math.PI * RING_RADIUS;
-/** The detail ring rolls in from above the viewport over this distance. */
-const ROLL_DISTANCE = 120;
+/** The detail ring rolls down from near the top edge over this distance. */
+const ROLL_DISTANCE = 56;
 const ROLL_DEGREES_PER_PX = 2.6;
 
 function hiddenTransform(down: boolean) {
