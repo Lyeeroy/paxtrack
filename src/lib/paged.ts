@@ -1,7 +1,7 @@
 import type { SearchResult } from "@/lib/types";
 
 /** Browse stops after this many pages per column (100 titles at 20/page). */
-export const BROWSE_PAGE_CAP = 5;
+export const BROWSE_PAGE_CAP = 10;
 
 /** Pages stored by number so late responses never append out of order. */
 export interface PagedResults {
@@ -21,9 +21,15 @@ export function uniqueResults(list: SearchResult[]): SearchResult[] {
 }
 
 /** Last page this app will show for a column, bounded by TMDB and the cap. */
-export function pageLimit(paged: PagedResults | undefined, cap = BROWSE_PAGE_CAP): number {
+export function pageLimit(
+  paged: PagedResults | undefined,
+  cap = BROWSE_PAGE_CAP,
+): number {
   if (!paged) return 0;
-  const loaded = Object.keys(paged.pages).reduce((max, key) => Math.max(max, Number(key)), 0);
+  const loaded = Object.keys(paged.pages).reduce(
+    (max, key) => Math.max(max, Number(key)),
+    0,
+  );
   return Math.min(cap, paged.totalPages || loaded);
 }
 
@@ -33,7 +39,10 @@ export function pageLimit(paged: PagedResults | undefined, cap = BROWSE_PAGE_CAP
  * of titles between pages, and dropping them would make one column shorter
  * than the others even though every column loaded the same pages.
  */
-export function flattenPages(paged: PagedResults | undefined, cap = BROWSE_PAGE_CAP): SearchResult[] {
+export function flattenPages(
+  paged: PagedResults | undefined,
+  cap = BROWSE_PAGE_CAP,
+): SearchResult[] {
   if (!paged) return [];
   const limit = pageLimit(paged, cap);
   const list: SearchResult[] = [];
@@ -46,14 +55,20 @@ export function flattenPages(paged: PagedResults | undefined, cap = BROWSE_PAGE_
 }
 
 /** Highest page committed in every column; the only depth safe to render. */
-export function sharedDepth(paged: (PagedResults | undefined)[], cap = BROWSE_PAGE_CAP): number {
+export function sharedDepth(
+  paged: (PagedResults | undefined)[],
+  cap = BROWSE_PAGE_CAP,
+): number {
   let depth = 0;
   while (depth < cap && paged.every((p) => !!p?.pages[depth + 1])) depth += 1;
   return depth;
 }
 
 /** First page any column still needs, or null when all columns are at the cap. */
-export function nextSharedPage(paged: (PagedResults | undefined)[], cap = BROWSE_PAGE_CAP): number | null {
+export function nextSharedPage(
+  paged: (PagedResults | undefined)[],
+  cap = BROWSE_PAGE_CAP,
+): number | null {
   for (let page = 1; page <= cap; page++) {
     if (
       paged.some((shelf) => {

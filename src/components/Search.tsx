@@ -6,7 +6,7 @@ import { uniqueResults } from "@/lib/paged";
 import Browse from "./Browse";
 import MediaRow from "./MediaRow";
 import PullUpToLoad from "./PullUpToLoad";
-import { Empty, IconSearch, ScreenHeader } from "./ui";
+import { Empty, IconClose, IconSearch, ScreenHeader } from "./ui";
 
 interface SearchPage {
   results: SearchResult[];
@@ -123,7 +123,7 @@ export default function Search({
     <div>
       <ScreenHeader title="Search" />
       <div className="px-4 pb-3 pt-1">
-        <label className="flex h-11 items-center gap-2 rounded-xl bg-surface px-3 text-dim focus-within:ring-1 focus-within:ring-accent/60">
+        <label className="flex h-11 items-center gap-2 overflow-hidden rounded-xl bg-surface px-3 text-dim focus-within:ring-1 focus-within:ring-accent/60">
           <IconSearch className="h-5 w-5 shrink-0" />
           <input
             ref={inputRef}
@@ -138,6 +138,20 @@ export default function Search({
             spellCheck={false}
             className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-fg outline-none placeholder:text-faint"
           />
+          {q ? (
+            <button
+              type="button"
+              onClick={() => {
+                setQ("");
+                // Keep the keyboard up so the next query needs no extra tap.
+                inputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+              className="-mr-2.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
+            >
+              <IconClose className="h-5 w-5" />
+            </button>
+          ) : null}
         </label>
       </div>
 
