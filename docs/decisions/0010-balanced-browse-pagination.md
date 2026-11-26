@@ -11,7 +11,7 @@ TMDB also repeats a small number of titles between pages (about 10 of 100 in Tre
 
 ## Decision
 
-- Every pull (and the single “Load more” pill) fetches the **same next page for all five columns** in parallel. No column can be advanced on its own.
+- Every pull (and the single “Load more” pill shown from `sm` up) fetches the **same next page for all five columns** in parallel. No column can be advanced on its own.
 - Columns render only the depth **all five have committed** (`sharedDepth()` in `src/lib/paged.ts`), and show equal skeletons while the shared page is in flight. A slow or failed response therefore holds every column at the previous page instead of creating a gap.
 - Deduplication is **per page**, not across pages. A repeated title from TMDB stays visible; matching row counts matter more than hiding an upstream data quirk.
 - The cap remains 5 pages / 100 titles per column. At the cap the pull is disabled and the global button is removed. There are no per-column buttons or “No more in {label}” lines.

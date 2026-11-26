@@ -252,7 +252,7 @@ export default function Browse({
 
         {/* One control for all columns, outside the carousel — no per-column buttons. */}
         {next !== null ? (
-          <div className="px-4 py-3 text-center">
+          <div className="hidden px-4 py-3 text-center sm:block">
             {loading ? (
               <p role="status" className="text-xs text-faint">
                 Loading more…

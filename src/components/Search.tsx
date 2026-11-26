@@ -176,7 +176,7 @@ export default function Search({
           </ul>
 
           {results.length > 0 && page < totalPages ? (
-            <div className="px-4 py-6 text-center">
+            <div className="hidden px-4 py-6 text-center sm:block">
               {loadingMore ? (
                 <p role="status" className="text-xs text-faint">
                   Loading more…
