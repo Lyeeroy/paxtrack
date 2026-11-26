@@ -11,6 +11,7 @@ import type { Item } from "@/lib/types";
 import Detail from "./Detail";
 import History from "./History";
 import Library from "./Library";
+import LoadingScreen from "./LoadingScreen";
 import Search from "./Search";
 import Settings from "./Settings";
 import Upcoming from "./Upcoming";
@@ -213,6 +214,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh bg-black">
+      <LoadingScreen ready={ready} />
       <main
         className="mx-auto min-h-dvh max-w-xl pb-[calc(env(safe-area-inset-bottom)+96px)]"
         aria-hidden={!!detail}

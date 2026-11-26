@@ -61,7 +61,7 @@ public/sw.js                 Offline caching + background release checks
 4. `refreshStale()` re-fetches metadata for active titles older than ~6 hours (2-worker pool).
 5. `checkNotifications()` runs for releases in the last two days; `registerPeriodic()` asks for Chromium periodic sync if already enabled.
 
-Separately, on mount, `/sw.js` is registered in production only. The UI renders nothing until `store.ready` is true, so it never flashes an empty library.
+Separately, on mount, `/sw.js` is registered in production only. `main` renders nothing until `store.ready` is true, so it never flashes an empty library. A full-screen `LoadingScreen` (`src/components/LoadingScreen.tsx`) covers the nav and toasts during that gap, stays up at least 650 ms so the animation never flashes, then fades out.
 
 ## Configuration surface
 
