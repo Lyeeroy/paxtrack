@@ -9,9 +9,9 @@ The detail view already exposes its info sheet through the poster/title buttons.
 
 ## Decision
 
-- Reuse `PullUpToLoad` with `direction="down"`. It claims only a mostly vertical, single-finger drag after 8 px of slop while the detail scroll container is at `scrollTop ≈ 0`, then lifts the content at 0.55× finger travel and fills the same 44 px accent ring over 96 px. Release past the threshold calls `onOpenInfo()`; below it the content springs back over 180 ms.
+- Reuse `PullUpToLoad` with `direction="down"`. It claims only a mostly vertical, single-finger drag after 8 px of slop while the detail scroll container is at `scrollTop ≈ 0`, then lifts the content at 0.55× finger travel and fills the same 44 px accent ring from 48 px to 160 px. Release past the threshold calls `onOpenInfo()`; below it the content springs back over 180 ms.
 - The detail passes its scroll container by ref, because the gesture target is the inner content wrapper and the document scroll position never changes here.
-- The indicator uses a top variant (`.pull-indicator-top`, `z-42`): below the sticky header, above the detail view (`z-40`) and below the sheet (`z-45`). It rolls down from 56 px above its rest spot, so it is visible from the first pull; both the vertical offset and the rotation are driven by finger travel, so the circle follows the user's pull instead of appearing in place. Aria labels say “Pull to open details” / “Release to open details”.
+- The indicator uses a top variant (`.pull-indicator-top`, `z-42`): below the sticky header, above the detail view (`z-40`) and below the sheet (`z-45`). It stays at a fixed spot high below the header, fades in from 24 px and is opaque by 48 px — exactly when the ring fill begins — so the user sees the fill start instead of a fully drawn ring. Aria labels say “Pull to open details” / “Release to open details”.
 - While `infoOpen` is true the pull is disabled and reset, so it cannot double-open or leave a spinner behind the sheet. The sheet keeps its own drag-to-dismiss/detent contract from ADR 0007; the poster/title buttons remain the non-gesture path.
 
 ## Consequences

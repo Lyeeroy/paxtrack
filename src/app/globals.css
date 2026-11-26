@@ -99,7 +99,7 @@ button {
 /* Detail's pull-down: below the sticky header, above the detail, below the sheet. */
 .pull-indicator-top {
   bottom: auto;
-  top: calc(env(safe-area-inset-top) + 72px);
+  top: calc(env(safe-area-inset-top) + 56px);
   z-index: 42;
 }
 

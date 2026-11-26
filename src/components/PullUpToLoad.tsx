@@ -11,26 +11,29 @@ import {
 import { createPortal } from "react-dom";
 import { haptic } from "@/lib/toast";
 
-/** Finger travel that starts the gesture and completes the ring. */
+/** Finger travel before the gesture is claimed. */
 const SLOP = 8;
-const TRIGGER = 96;
+/** Travel where the accent ring starts filling — after the circle is visible. */
+const FILL_START = 48;
+/** Travel where the ring is full and the action fires. */
+const TRIGGER = 160;
 /** Content follows the finger at a damped rate, capped so the page never runs away. */
 const LIFT_RATIO = 0.55;
 const MAX_LIFT = 120;
 const SPRING_MS = 180;
 const RING_RADIUS = 19;
 const RING = 2 * Math.PI * RING_RADIUS;
-/** The detail ring rolls down from near the top edge over this distance. */
-const ROLL_DISTANCE = 56;
-const ROLL_DEGREES_PER_PX = 2.6;
+/** Detail: the circle fades in here and is opaque by FILL_START. */
+const APPEAR_AT = 96;
+const HIDDEN_TRANSFORM = "translate(-50%, 0) scale(0.8)";
 
-function hiddenTransform(down: boolean) {
-  return down ? `translate(-50%, -${ROLL_DISTANCE}px) rotate(0deg) scale(0.8)` : "translate(-50%, 0) scale(0.8)";
+function fillProgress(raw: number) {
+  return Math.min(1, Math.max(0, (raw - FILL_START) / (TRIGGER - FILL_START)));
 }
 
 function atBottom() {
   const doc = document.documentElement;
-  return window.scrollY + window.innerHeight >= doc.scrollHeight - 2;
+  return window.scrollY + window.innerHeight >= doc.scrollHeight - 1;
 }
 
 function atTop(scrollRef: RefObject<HTMLElement | null> | undefined) {
@@ -139,7 +142,7 @@ export default function PullUpToLoad({
       ind.style.transition = "";
       ind.style.visibility = "hidden";
       ind.style.opacity = "0";
-      ind.style.transform = hiddenTransform(directionRef.current === "down");
+      ind.style.transform = HIDDEN_TRANSFORM;
     }
     const ring = ringRef.current;
     if (ring) ring.style.strokeDashoffset = String(RING);
@@ -165,7 +168,9 @@ export default function PullUpToLoad({
       clearSpring();
       const el = rootRef.current;
       const ind = indicatorRef.current;
-      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const reduced = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
       if (!el || immediate || reduced) {
         reset();
         if (aliveRef.current) setBusy(false);
@@ -176,7 +181,7 @@ export default function PullUpToLoad({
       if (ind) {
         ind.style.transition = `opacity 140ms ease-out, transform ${SPRING_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
         ind.style.opacity = "0";
-        ind.style.transform = hiddenTransform(directionRef.current === "down");
+        ind.style.transform = HIDDEN_TRANSFORM;
       }
       springTimer.current = window.setTimeout(() => {
         springTimer.current = undefined;
@@ -194,11 +199,14 @@ export default function PullUpToLoad({
 
     const isDown = () => directionRef.current === "down";
     const scrollPos = () =>
-      isDown() ? (scrollRefRef.current?.current?.scrollTop ?? window.scrollY) : window.scrollY;
+      isDown()
+        ? (scrollRefRef.current?.current?.scrollTop ?? window.scrollY)
+        : window.scrollY;
     const atEdge = () => (isDown() ? atTop(scrollRefRef.current) : atBottom());
 
     const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1 || busyRef.current || !canLoadRef.current) return;
+      if (e.touches.length !== 1 || busyRef.current || !canLoadRef.current)
+        return;
       if (isTyping() || !atEdge()) return;
       const t = e.touches[0];
       drag.current = {
@@ -226,7 +234,8 @@ export default function PullUpToLoad({
       const down = isDown();
       if (!d.claimed) {
         // A fling still settling into the edge, or a drag away from it, is not ours.
-        if (Math.abs(scrollPos() - d.scroll) > 1 || (down ? dy <= 0 : dy >= 0)) return;
+        if (Math.abs(scrollPos() - d.scroll) > 1 || (down ? dy <= 0 : dy >= 0))
+          return;
         if (Math.abs(dy) < SLOP || Math.abs(dx) > Math.abs(dy)) return;
         if (!atEdge()) {
           drag.current = null;
@@ -260,7 +269,7 @@ export default function PullUpToLoad({
       }
 
       const raw = Math.max(0, down ? dy : -dy);
-      const progress = Math.min(1, Math.max(0, (raw - SLOP) / (TRIGGER - SLOP)));
+      const progress = fillProgress(raw);
       d.raw = raw;
       d.progress = progress;
 
@@ -272,18 +281,23 @@ export default function PullUpToLoad({
 
       const ind = indicatorRef.current;
       if (ind) {
-        const opacity = Math.min(1, Math.max(0, (raw - SLOP) / 24));
+        const showAt = down ? APPEAR_AT : SLOP;
+        const opacity = Math.min(1, Math.max(0, (raw - showAt) / 24));
         const scale = 0.8 + 0.2 * opacity;
-        ind.style.transform = down
-          ? `translate(-50%, ${-ROLL_DISTANCE * (1 - progress)}px) rotate(${Math.min(raw, TRIGGER) * ROLL_DEGREES_PER_PX}deg) scale(${scale})`
-          : `translate(-50%, 0) scale(${scale})`;
+        ind.style.opacity = String(opacity);
+        ind.style.transform = `translate(-50%, 0) scale(${scale})`;
         const aria = Math.round(progress * 4) * 25;
         if (aria !== d.aria) {
           d.aria = aria;
           const bar = ind.querySelector('[role="progressbar"]');
           bar?.setAttribute("aria-valuenow", String(aria));
           const { actionLabel } = labelsRef.current;
-          bar?.setAttribute("aria-label", progress >= 1 ? `Release to ${actionLabel}` : `Pull to ${actionLabel}`);
+          bar?.setAttribute(
+            "aria-label",
+            progress >= 1
+              ? `Release to ${actionLabel}`
+              : `Pull to ${actionLabel}`,
+          );
         }
       }
     };
@@ -295,19 +309,13 @@ export default function PullUpToLoad({
       const t = e.changedTouches[0];
       if (t) {
         const raw = Math.max(0, isDown() ? t.clientY - d.y : d.y - t.clientY);
-        d.progress = Math.min(1, Math.max(0, (raw - SLOP) / (TRIGGER - SLOP)));
+        d.progress = fillProgress(raw);
       }
       suppressUntil.current = Date.now() + 350;
       if (d.progress >= 1 && canLoadRef.current && !busyRef.current) {
         haptic(10);
         busyRef.current = true;
         const token = ++loadToken.current;
-        // The spinner starts upright at the resting spot, not mid-roll.
-        const ind = indicatorRef.current;
-        if (ind && isDown()) {
-          ind.style.transition = `transform ${SPRING_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
-          ind.style.transform = "translate(-50%, 0) rotate(0deg) scale(1)";
-        }
         if (aliveRef.current) setBusy(true);
         void onLoadRef
           .current()
@@ -385,7 +393,10 @@ export default function PullUpToLoad({
       {children}
       {mounted
         ? createPortal(
-            <div ref={indicatorRef} className={`pull-indicator ${direction === "down" ? "pull-indicator-top" : ""}`}>
+            <div
+              ref={indicatorRef}
+              className={`pull-indicator ${direction === "down" ? "pull-indicator-top" : ""}`}
+            >
               {busy ? (
                 <div
                   role="progressbar"
@@ -403,7 +414,14 @@ export default function PullUpToLoad({
                   aria-valuenow={0}
                   className="h-11 w-11 -rotate-90"
                 >
-                  <circle cx="22" cy="22" r={RING_RADIUS} fill="none" stroke="var(--color-line)" strokeWidth="3" />
+                  <circle
+                    cx="22"
+                    cy="22"
+                    r={RING_RADIUS}
+                    fill="none"
+                    stroke="var(--color-line)"
+                    strokeWidth="3"
+                  />
                   <circle
                     ref={ringRef}
                     cx="22"

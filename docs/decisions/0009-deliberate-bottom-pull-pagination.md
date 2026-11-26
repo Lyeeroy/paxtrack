@@ -11,7 +11,7 @@ The product is phone-first. Pagination should feel like a physical continuation 
 
 ## Decision
 
-- A shared `PullUpToLoad` component owns a **deliberate upward pull at the document bottom**. The page must already be at the bottom; continuing the drag lifts the content at 0.55× finger travel (max 120 px) and fills a 44 px accent ring over 96 px. Release past the threshold loads the next page; below it, the page springs back over 180 ms. Haptics fire when the ring is full.
+- A shared `PullUpToLoad` component owns a **deliberate upward pull at the document bottom**. The page must already be at the bottom; continuing the drag lifts the content at 0.55× finger travel (max 120 px) and fills a 44 px accent ring from 48 px to 160 px. Release past the threshold loads the next page; below it, the page springs back over 180 ms. Haptics fire when the ring is full.
 - The gesture uses a **native `touchmove` listener with `passive: false`** because React touch handlers are passive and cannot prevent scrolling. It claims only for a mostly vertical, single-finger drag, after 8 px of slop, and rechecks the bottom on every move. It aborts on horizontal drift, `touchcancel`, tab hide or page hide.
 - The indicator is **portaled to `document.body`**; a transformed ancestor would otherwise become its containing block. Browse's sticky dots live inside the transformed wrapper, so they fade while pulling instead of travelling with the page.
 - **Search results** replace the automatic sentinel with the pull. The "Load more" button remains the tap/keyboard fallback.
