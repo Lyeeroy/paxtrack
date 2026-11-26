@@ -1,7 +1,7 @@
 import type { SearchResult } from "@/lib/types";
 
 /** Browse stops after this many pages per column (100 titles at 20/page). */
-export const BROWSE_PAGE_CAP = 10;
+export const BROWSE_PAGE_CAP = 5;
 
 /** Pages stored by number so late responses never append out of order. */
 export interface PagedResults {
