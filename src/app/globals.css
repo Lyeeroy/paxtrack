@@ -162,8 +162,8 @@ button {
   animation: fade-in 260ms var(--ease-sheet) both;
 }
 
-/* Launch splash: the one deliberate inversion of the black-first palette.
-   Cube paths mirror src/app/icon.svg; pathLength normalises the draw. */
+/* Launch splash: the one deliberate inversion of the black-first palette —
+   a plain green field with the icon's cube drawing itself. */
 .splash {
   animation: splash-in 160ms ease-out both;
 }
@@ -178,43 +178,16 @@ button {
   from { opacity: 1; }
   to { opacity: 0; }
 }
-.splash-halo,
-.splash-box {
-  transform-box: view-box;
-  transform-origin: center;
-}
-.splash-halo {
-  animation: splash-halo 1.8s ease-out infinite;
-}
-@keyframes splash-halo {
-  0% { transform: scale(0.9); opacity: 0; }
-  30% { opacity: 0.6; }
-  100% { transform: scale(1.35); opacity: 0; }
-}
-.splash-box {
-  animation: splash-bob 2s ease-in-out 700ms infinite;
-}
-@keyframes splash-bob {
-  0%, 100% { transform: translateY(0) rotate(-3deg); }
-  50% { transform: translateY(-2px) rotate(3deg); }
-}
 .splash-edge {
   stroke-dasharray: 100;
-  animation: splash-draw 700ms ease-out both;
+  animation: splash-draw 480ms ease-out both;
 }
 .splash-edge-b {
-  animation-delay: 300ms;
+  animation-delay: 160ms;
 }
 @keyframes splash-draw {
   from { stroke-dashoffset: 100; }
   to { stroke-dashoffset: 0; }
-}
-.splash-bar {
-  animation: splash-bar 1.2s ease-in-out infinite;
-}
-@keyframes splash-bar {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(250%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -224,10 +197,7 @@ button {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
-  .splash-halo,
-  .splash-box,
-  .splash-edge,
-  .splash-bar {
+  .splash-edge {
     animation: none !important;
   }
 }
