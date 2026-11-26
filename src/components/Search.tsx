@@ -1,12 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  DEFAULT_DISCOVER_FILTERS,
+  filtersActive as discoverFiltersActive,
+  type DiscoverFilters,
+} from "@/lib/discover";
 import type { Item, SearchResult } from "@/lib/types";
 import { uniqueResults } from "@/lib/paged";
 import Browse from "./Browse";
+import { DiscoverFilterSheet } from "./DiscoverFilters";
 import MediaRow from "./MediaRow";
 import PullUpToLoad from "./PullUpToLoad";
-import { Empty, IconClose, IconSearch, ScreenHeader } from "./ui";
+import { DEFAULT_FILTERS, filtersActive, matchesFilters, SearchFilterSheet, type SearchFilterState } from "./SearchFilters";
+import { Empty, IconClose, IconFilterList, IconSearch, ScreenHeader } from "./ui";
 
 interface SearchPage {
   results: SearchResult[];
@@ -36,6 +43,18 @@ export default function Search({
   const [totalPages, setTotalPages] = useState(cached?.totalPages ?? 0);
   const [state, setState] = useState<"idle" | "loading" | "error" | "offline">("idle");
   const [loadingMore, setLoadingMore] = useState(false);
+  // Search filters apply to loaded rows only; Discover filters change the feed
+  // and turn the Browse carousel into a single full-width result list.
+  const [filters, setFilters] = useState<SearchFilterState>(DEFAULT_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [discoverFilters, setDiscoverFilters] = useState<DiscoverFilters>(DEFAULT_DISCOVER_FILTERS);
+  const [discoverFilterOpen, setDiscoverFilterOpen] = useState(false);
+  const browsing = !q.trim();
+  const headerFilterActive = browsing ? discoverFiltersActive(discoverFilters) : filtersActive(filters);
+  const closeSheets = () => {
+    setFilterOpen(false);
+    setDiscoverFilterOpen(false);
+  };
   const seq = useRef(0);
   const loadingMoreRef = useRef(false);
 
@@ -117,11 +136,30 @@ export default function Search({
   }, [q]);
 
   const tracked = new Map(items.map((i) => [i.id, i]));
+  // Pulling loads raw pages; if filters hide everything the user can still pull
+  // for more, so canPull deliberately uses the unfiltered count.
+  const visibleResults = results.filter((r) => matchesFilters(r, tracked.get(`${r.type}-${r.tmdbId}`), filters));
   const canPull = results.length > 0 && page < totalPages && state === "idle" && !loadingMore;
 
   return (
     <div>
-      <ScreenHeader title="Search" />
+      <ScreenHeader
+        title="Search"
+        right={
+          <button
+            type="button"
+            onClick={() => (browsing ? setDiscoverFilterOpen(true) : setFilterOpen(true))}
+            aria-label={browsing ? "Discover filters" : "Search filters"}
+            aria-haspopup="dialog"
+            aria-expanded={browsing ? discoverFilterOpen : filterOpen}
+            className={`-mb-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full active:bg-raised ${
+              headerFilterActive ? "text-accent" : "text-dim hover:text-fg"
+            }`}
+          >
+            <IconFilterList className="h-5 w-5 translate-y-[5px]" />
+          </button>
+        }
+      />
       <div className="px-4 pb-3 pt-1">
         <label className="flex h-11 items-center gap-2 overflow-hidden rounded-xl bg-surface px-3 text-dim focus-within:ring-1 focus-within:ring-accent/60">
           <IconSearch className="h-5 w-5 shrink-0" />
@@ -129,7 +167,10 @@ export default function Search({
             ref={inputRef}
             type="search"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => {
+              setQ(e.target.value);
+              closeSheets();
+            }}
             placeholder="Anime, TV shows, movies"
             aria-label="Search titles"
             enterKeyHint="search"
@@ -143,6 +184,7 @@ export default function Search({
               type="button"
               onClick={() => {
                 setQ("");
+                closeSheets();
                 // Keep the keyboard up so the next query needs no extra tap.
                 inputRef.current?.focus();
               }}
@@ -155,17 +197,20 @@ export default function Search({
         </label>
       </div>
 
-      {!q.trim() ? (
-        <Browse items={items} onOpen={onOpen} onOverscroll={onSwipeTab} />
+      {browsing ? (
+        <Browse items={items} onOpen={onOpen} onOverscroll={onSwipeTab} discoverFilters={discoverFilters} />
       ) : (
         <PullUpToLoad canLoad={canPull} onLoad={loadMore}>
           {state === "offline" ? <Empty title="You're offline" hint="Search needs a connection. Your library works offline." /> : null}
           {state === "error" ? <Empty title="Couldn't reach TMDB" hint="Try again in a moment." /> : null}
           {state === "loading" && !results.length ? <Empty title="Searching…" /> : null}
           {state === "idle" && !results.length ? <Empty title="No results" /> : null}
+          {state === "idle" && results.length && !visibleResults.length ? (
+            <Empty title="No matches" hint="Try changing your filters." />
+          ) : null}
 
           <ul>
-            {results.map((r) => {
+            {visibleResults.map((r) => {
               const id = `${r.type}-${r.tmdbId}`;
               return (
                 <li key={id} className="cv px-4">
@@ -194,6 +239,20 @@ export default function Search({
           ) : null}
         </PullUpToLoad>
       )}
+
+      <SearchFilterSheet
+        open={filterOpen && !browsing}
+        onClose={() => setFilterOpen(false)}
+        filters={filters}
+        onChange={setFilters}
+        subtitle={`${visibleResults.length} of ${results.length} shown`}
+      />
+      <DiscoverFilterSheet
+        open={discoverFilterOpen && browsing}
+        onClose={() => setDiscoverFilterOpen(false)}
+        filters={discoverFilters}
+        onChange={setDiscoverFilters}
+      />
     </div>
   );
 }

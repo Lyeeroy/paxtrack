@@ -50,6 +50,11 @@ export const IconSettings = ({ className }: IconProps) => (
     <circle cx="8" cy="17" r="2" />
   </svg>
 );
+export const IconFilterList = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="M4 7h16M7 12h10M10 17h4" />
+  </svg>
+);
 export const IconPlus = ({ className }: IconProps) => (
   <svg {...base} className={className}>
     <path d="M12 5v14M5 12h14" />

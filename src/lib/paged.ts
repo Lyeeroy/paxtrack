@@ -1,7 +1,10 @@
 import type { SearchResult } from "@/lib/types";
 
-/** Browse stops after this many pages per column (100 titles at 20/page). */
+/** Default Browse columns stop after this many pages (100 titles at 20/page). */
 export const BROWSE_PAGE_CAP = 5;
+
+/** Filtered Discover follows TMDB's own page count instead of an app-side cap. */
+export const UNLIMITED_PAGES = Infinity;
 
 /** Pages stored by number so late responses never append out of order. */
 export interface PagedResults {
@@ -64,12 +67,21 @@ export function sharedDepth(
   return depth;
 }
 
-/** First page any column still needs, or null when all columns are at the cap. */
+/** First page any column still needs, or null when none is fetchable. */
 export function nextSharedPage(
   paged: (PagedResults | undefined)[],
   cap = BROWSE_PAGE_CAP,
 ): number | null {
-  for (let page = 1; page <= cap; page++) {
+  // Bound the scan even with an unlimited cap: TMDB's reported total, or one
+  // page past what is already loaded when it has not reported a total yet.
+  const knownTotal = paged.reduce((max, s) => Math.max(max, s?.totalPages ?? 0), 0);
+  const loaded = paged.reduce(
+    (max, s) =>
+      Object.keys(s?.pages ?? {}).reduce((m, key) => Math.max(m, Number(key)), max),
+    0,
+  );
+  const ceiling = Math.min(cap, Math.max(knownTotal, loaded + 1));
+  for (let page = 1; page <= ceiling; page++) {
     if (
       paged.some((shelf) => {
         if (shelf?.pages[page]) return false;

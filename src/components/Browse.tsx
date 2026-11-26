@@ -3,22 +3,26 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
   type TouchEvent as ReactTouchEvent,
 } from "react";
+import { discoverCacheKey, discoverQuery, filtersActive, type DiscoverFilters } from "@/lib/discover";
 import type { Item, SearchResult } from "@/lib/types";
 import {
-  BROWSE_PAGE_CAP,
   flattenPages,
   nextSharedPage,
+  pageLimit,
   sharedDepth,
   uniqueResults,
+  UNLIMITED_PAGES,
   type PagedResults,
 } from "@/lib/paged";
 import MediaRow from "./MediaRow";
 import PullUpToLoad from "./PullUpToLoad";
+import { Empty } from "./ui";
 
 type Category = "discover" | "trending" | "popular" | "top-rated" | "in-cinema";
 
@@ -30,16 +34,32 @@ const SHELVES: { key: Category; label: string; hint: string }[] = [
   { key: "in-cinema", label: "In cinema", hint: "Now playing" },
 ];
 
-/** Page slots per category, kept across search-query changes and tab switches. */
-const cache = new Map<Category, PagedResults>();
-/** One request per category:page, shared by the pull and the button. */
+type Column = { category: Category; key: string; query: string };
+
+/** Page slots per column, kept across search-query changes and tab switches. */
+const cache = new Map<string, PagedResults>();
+/** One request per column:page, shared by the pull and the button. */
 const inflight = new Map<string, Promise<void>>();
 
 /** Column margin; must match `mr-2.5` in the markup. */
 const GAP = 10;
 
-function keyOf(category: Category, page: number) {
-  return `${category}:${page}`;
+function keyOf(key: string, page: number) {
+  return `${key}:${page}`;
+}
+
+/**
+ * Discover gets its own cache key per filter set so changing a filter never
+ * refetches (or lengthens) the four untouched columns.
+ */
+function columnsFor(filters: DiscoverFilters): Column[] {
+  const discoverKey = discoverCacheKey(filters);
+  const discoverQueryString = new URLSearchParams(discoverQuery(filters)).toString();
+  return SHELVES.map((s) =>
+    s.key === "discover"
+      ? { category: s.key, key: discoverKey, query: discoverQueryString }
+      : { category: s.key, key: s.key, query: `category=${s.key}` },
+  );
 }
 
 function SkeletonRows({ count }: { count: number }) {
@@ -62,11 +82,14 @@ export default function Browse({
   items,
   onOpen,
   onOverscroll,
+  discoverFilters,
 }: {
   items: Item[];
   onOpen: (id: string, preview?: Item) => void;
   /** Drag past the first/last column moves to the adjacent tab instead. */
   onOverscroll?: (dir: 1 | -1) => void;
+  /** Active Discover filters: a non-default set turns the carousel into one full-width list. */
+  discoverFilters: DiscoverFilters;
 }) {
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const [active, setActive] = useState(0);
@@ -74,25 +97,27 @@ export default function Browse({
   const colRefs = useRef<(HTMLDivElement | null)[]>([]);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const tracked = new Map(items.map((i) => [i.id, i]));
+  const columns = useMemo(() => columnsFor(discoverFilters), [discoverFilters]);
+  const firstLoad = useRef(true);
 
   /** Fetch one page, deduping every caller through the same promise. */
   const loadPage = useCallback(
-    async (key: Category, page: number) => {
-      if (cache.get(key)?.pages[page]) return;
-      const id = keyOf(key, page);
+    async (column: Column, page: number) => {
+      if (cache.get(column.key)?.pages[page]) return;
+      const id = keyOf(column.key, page);
       const running = inflight.get(id);
       if (running) return running;
       const task = (async () => {
         try {
-          const res = await fetch(`/api/tmdb/browse?category=${key}&page=${page}`);
+          const res = await fetch(`/api/tmdb/browse?${column.query}&page=${page}`);
           if (!res.ok) throw new Error();
           const json = (await res.json()) as {
             results: SearchResult[];
             page: number;
             totalPages: number;
           };
-          const current = cache.get(key) ?? { pages: {}, totalPages: 0 };
-          cache.set(key, {
+          const current = cache.get(column.key) ?? { pages: {}, totalPages: 0 };
+          cache.set(column.key, {
             pages: { ...current.pages, [json.page]: uniqueResults(json.results) },
             totalPages: json.totalPages,
           });
@@ -110,12 +135,18 @@ export default function Browse({
     [bump],
   );
 
-  // First page for every column. Cached columns skip the request entirely.
+  // First page for every column. Cached columns skip the request entirely;
+  // a filter change debounces briefly so typing a year is one request.
   useEffect(() => {
-    for (const shelf of SHELVES) {
-      if (!cache.get(shelf.key)?.pages[1]) void loadPage(shelf.key, 1);
-    }
-  }, [loadPage]);
+    const delay = firstLoad.current ? 0 : 200;
+    firstLoad.current = false;
+    const t = setTimeout(() => {
+      for (const column of columns) {
+        if (!cache.get(column.key)?.pages[1]) void loadPage(column, 1);
+      }
+    }, delay);
+    return () => clearTimeout(t);
+  }, [columns, loadPage]);
 
   const step = () => (colRefs.current[0]?.offsetWidth ?? 0) + GAP;
 
@@ -178,22 +209,91 @@ export default function Browse({
     [onOpen],
   );
 
-  // Every column advances together, so a pull can never leave one shelf long
-  // and the rest short. Rendering is gated on the depth shared by all five.
-  const shelves = SHELVES.map((s) => cache.get(s.key));
-  const depth = sharedDepth(shelves);
+  // All columns request the same next page, but a filtered Discover can have
+  // fewer total pages: it simply stops there instead of freezing the others.
+  // Each column reveals the pages it actually has, never a gap.
+  const shelves = columns.map((c) => cache.get(c.key));
+  // The four unfiltered columns stay in lockstep; filtered Discover reveals its
+  // own committed pages because its total page count can be shorter.
+  const staticDepth = sharedDepth(shelves.slice(1));
   const next = nextSharedPage(shelves);
-  const loading = next !== null && SHELVES.some((s) => inflight.has(keyOf(s.key, next)));
+  const loading = next !== null && columns.some((c) => inflight.has(keyOf(c.key, next)));
   const canPull = next !== null && !loading;
+  const filterOn = filtersActive(discoverFilters);
 
-  /** One pull/button press loads the same next page for all five columns. */
+  /** One pull/button press loads the same next page for every column that has one. */
   const loadShared = useCallback(async () => {
-    const page = nextSharedPage(SHELVES.map((s) => cache.get(s.key)));
+    const page = nextSharedPage(columns.map((c) => cache.get(c.key)));
     if (page === null) return;
     await Promise.all(
-      SHELVES.filter((s) => !cache.get(s.key)?.pages[page]).map((s) => loadPage(s.key, page)),
+      columns
+        .filter((c) => {
+          const shelf = cache.get(c.key);
+          return !shelf?.pages[page] && (!shelf?.totalPages || shelf.totalPages >= page);
+        })
+        .map((c) => loadPage(c, page)),
     );
-  }, [loadPage]);
+  }, [columns, loadPage]);
+
+  // With filters on, Discover is the only thing on screen: one plain result
+  // list instead of the five-column carousel.
+  const discoverColumn = columns.find((c) => c.category === "discover")!;
+  const discoverShelf = cache.get(discoverColumn.key);
+  // No app-side page cap: pull keeps going until TMDB says the feed is done.
+  const discoverList = flattenPages(discoverShelf, UNLIMITED_PAGES);
+  const discoverNext = nextSharedPage([discoverShelf], UNLIMITED_PAGES);
+  const discoverLoading = discoverNext !== null && inflight.has(keyOf(discoverColumn.key, discoverNext));
+  const loadDiscover = useCallback(async () => {
+    const column = columns.find((c) => c.category === "discover")!;
+    const page = nextSharedPage([cache.get(column.key)], UNLIMITED_PAGES);
+    if (page === null) return;
+    await loadPage(column, page);
+  }, [columns, loadPage]);
+
+  if (filterOn) {
+    return (
+      <PullUpToLoad canLoad={discoverNext !== null && !discoverLoading} onLoad={loadDiscover} resetKey={discoverColumn.key}>
+        <div className="pt-1">
+          <p className="px-4 pb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Discover · filtered</p>
+          {!discoverShelf?.pages[1] ? (
+            <div className="px-4">
+              <SkeletonRows count={6} />
+            </div>
+          ) : discoverList.length ? (
+            <ul>
+              {discoverList.map((r, i) => {
+                const id = `${r.type}-${r.tmdbId}`;
+                return (
+                  <li key={`${i}-${id}`} className="cv px-4">
+                    <MediaRow result={r} have={tracked.get(id)} onOpen={openFromRow} />
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <Empty title="No matches" hint="Try changing your filters." />
+          )}
+          {discoverNext !== null && discoverShelf?.pages[1] ? (
+            <div className="hidden px-4 py-6 text-center sm:block">
+              {discoverLoading ? (
+                <p role="status" className="text-xs text-faint">
+                  Loading more…
+                </p>
+              ) : (
+                <button
+                  data-pull-allow-click
+                  onClick={() => void loadDiscover()}
+                  className="h-10 rounded-full bg-surface px-4 text-[13px] text-dim active:bg-raised"
+                >
+                  Load more
+                </button>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </PullUpToLoad>
+    );
+  }
 
   return (
     <PullUpToLoad canLoad={canPull} onLoad={loadShared} resetKey={active}>
@@ -211,10 +311,8 @@ export default function Browse({
         >
           <div className="w-4 shrink-0" aria-hidden />
           {SHELVES.map((s, index) => {
-            const shelf = cache.get(s.key);
-            // `depth` is the page count every column has committed, so all five
-            // columns reveal a new page at the same time and stay the same length.
-            const list = flattenPages(shelf, depth);
+            const shelf = cache.get(columns[index].key);
+            const list = flattenPages(shelf, s.key === "discover" ? pageLimit(shelf) : staticDepth);
             const initial = !shelf?.pages[1];
             return (
               <div
