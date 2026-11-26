@@ -18,7 +18,7 @@ TMDB also repeats a small number of titles between pages (about 10 of 100 in Tre
 
 ## Consequences
 
-- All columns now end at exactly the same row count (100 at the cap). A repeated title can appear twice in a column; that is TMDB data, not a client bug.
+- All columns now end at exactly the same row count (100 at the cap). A repeated title can appear twice in a column; that is TMDB data, not a client bug. Rows are keyed by page position because `type-tmdbId` is no longer unique across the flattened list.
 - Each pull issues up to five requests at once instead of one. They are deduped per `category:page`, so repeated pulls or rapid tab switches never double-fetch a page.
 - A column with a lower TMDB `totalPages` simply stops; `nextSharedPage()` skips it and the other columns cap at the same depth.
 - Reintroducing per-column loads or a global cross-page dedupe would recreate the ragged columns this ADR fixes.

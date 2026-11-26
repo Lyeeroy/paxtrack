@@ -232,9 +232,11 @@ export default function Browse({
                 {initial ? (
                   <SkeletonRows count={6} />
                 ) : list.length ? (
-                  list.map((r) => {
+                  list.map((r, index) => {
                     const id = `${r.type}-${r.tmdbId}`;
-                    return <MediaRow key={id} result={r} have={tracked.get(id)} onOpen={openFromRow} />;
+                    // TMDB repeats titles across pages, so the id alone is not
+                    // unique here. Pages only append, making the position stable.
+                    return <MediaRow key={`${index}-${id}`} result={r} have={tracked.get(id)} onOpen={openFromRow} />;
                   })
                 ) : (
                   <p className="py-8 text-xs text-faint">Nothing to show right now</p>
