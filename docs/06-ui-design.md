@@ -26,7 +26,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 | Drag horizontally | Screen (outside swipe rows/inputs) | Switch tabs |
 | Drag past the first/last browse column | Search landing (Discover / In cinema) | Switch to the previous/next tab; the track is clamped so no blank space is revealed |
 | Drag up at the bottom | Search results / Browse (all columns) | Pull past 160 px to load the next page; the page follows the finger and a 44 px accent ring fills from 48 px |
-| Drag down at the top | Detail view | Open the info sheet; the circle appears at 24 px and the ring fills from 48 px to 160 px |
+| Drag down at the top | Detail view | Open the info sheet; the circle appears at 140 px and the ring fills from 164 px to 284 px |
 | Drag from left edge | Detail view | Go back / close detail |
 | Tap twice | Remove button | Confirm removal |
 | Tap active status | Detail status buttons | Remove from library (toast; detail stays open, pick a status to re-add). With watched progress, the first tap arms a 3 s confirmation instead |
@@ -38,7 +38,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 
 - The threshold is 72 px (70 px for tab and edge swipes). The sheet has its own proportional threshold: 25% of the panel height, clamped to 64–180 px, or a downward flick over 0.35 px/ms. Each gesture moves one detent — up from the header expands, down from expanded collapses, down from collapsed dismisses. Upward drags from content stay with scrolling. Drag transforms and detent heights are written straight to the DOM with no React re-render so motion stays cheap on budget phones; `haptic()` fires on completion.
 - Pull-to-load starts only when the document is already at the bottom, after 8 px of touch slop, and only for a mostly vertical drag. The page lifts at 0.55× finger travel (max 120 px); a 3 px accent ring on a 44 px circle starts filling at 48 px, is full at 160 px, and fires the haptic then — so the circle is visible before the fill begins. Release below the threshold springs back over 180 ms. The gesture never starts while the search input is focused, and a short page whose header is still visible keeps the tap fallback instead of sliding under the field.
-- Detail reuses the same gesture inverted: at `scrollTop ≈ 0`, dragging down lifts the content, fills the ring with “open details” labels, and opens the info sheet at the threshold. The indicator sits high below the sticky header between the detail (`z-40`) and the sheet (`z-45`); it stays **steady**, fades in from 24 px (opaque at 48 px), and only then does the ring begin filling — over 48–160 px of travel. The poster/title tap remains the non-gesture path.
+- Detail reuses the same gesture inverted: at `scrollTop ≈ 0`, dragging down lifts the content, fills the ring with “open details” labels, and opens the info sheet at the threshold. The indicator sits high below the sticky header between the detail (`z-40`) and the sheet (`z-45`); it stays **steady**, fades in from 140 px (opaque at 164 px), and only then does the ring begin filling — over 164–284 px of travel. Pagination keeps its shorter 48–160 px fill. The poster/title tap remains the non-gesture path.
 - A revealed action is always mirrored by a tap control (the `+` button, status buttons, the back button). **Gestures accelerate; they never gate.** Every gesture must have a non-gesture path.
 - Rows inside swipe containers keep `data-swipe` so the screen-level tab swipe ignores them; inputs and textareas are excluded the same way.
 

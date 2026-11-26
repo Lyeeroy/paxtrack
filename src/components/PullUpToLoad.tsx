@@ -13,22 +13,26 @@ import { haptic } from "@/lib/toast";
 
 /** Finger travel before the gesture is claimed. */
 const SLOP = 8;
-/** Travel where the accent ring starts filling — after the circle is visible. */
-const FILL_START = 48;
-/** Travel where the ring is full and the action fires. */
-const TRIGGER = 160;
+/** Pagination: circle fades in at SLOP, ring fills from 48 to 160 px. */
+const FILL_START_UP = 48;
+const TRIGGER_UP = 160;
+/** Detail: the circle fades in here, is opaque 24 px later, then the ring fills. */
+const APPEAR_AT = 140;
+const FADE_PX = 24;
+const FILL_START_DOWN = APPEAR_AT + FADE_PX;
+const TRIGGER_DOWN = FILL_START_DOWN + 120;
 /** Content follows the finger at a damped rate, capped so the page never runs away. */
 const LIFT_RATIO = 0.55;
 const MAX_LIFT = 120;
 const SPRING_MS = 180;
 const RING_RADIUS = 19;
 const RING = 2 * Math.PI * RING_RADIUS;
-/** Detail: the circle fades in here and is opaque by FILL_START. */
-const APPEAR_AT = 96;
 const HIDDEN_TRANSFORM = "translate(-50%, 0) scale(0.8)";
 
-function fillProgress(raw: number) {
-  return Math.min(1, Math.max(0, (raw - FILL_START) / (TRIGGER - FILL_START)));
+function fillProgress(raw: number, down: boolean) {
+  const start = down ? FILL_START_DOWN : FILL_START_UP;
+  const end = down ? TRIGGER_DOWN : TRIGGER_UP;
+  return Math.min(1, Math.max(0, (raw - start) / (end - start)));
 }
 
 function atBottom() {
@@ -269,7 +273,7 @@ export default function PullUpToLoad({
       }
 
       const raw = Math.max(0, down ? dy : -dy);
-      const progress = fillProgress(raw);
+      const progress = fillProgress(raw, down);
       d.raw = raw;
       d.progress = progress;
 
@@ -282,7 +286,7 @@ export default function PullUpToLoad({
       const ind = indicatorRef.current;
       if (ind) {
         const showAt = down ? APPEAR_AT : SLOP;
-        const opacity = Math.min(1, Math.max(0, (raw - showAt) / 24));
+        const opacity = Math.min(1, Math.max(0, (raw - showAt) / FADE_PX));
         const scale = 0.8 + 0.2 * opacity;
         ind.style.opacity = String(opacity);
         ind.style.transform = `translate(-50%, 0) scale(${scale})`;
@@ -309,7 +313,7 @@ export default function PullUpToLoad({
       const t = e.changedTouches[0];
       if (t) {
         const raw = Math.max(0, isDown() ? t.clientY - d.y : d.y - t.clientY);
-        d.progress = fillProgress(raw);
+        d.progress = fillProgress(raw, isDown());
       }
       suppressUntil.current = Date.now() + 350;
       if (d.progress >= 1 && canLoadRef.current && !busyRef.current) {
