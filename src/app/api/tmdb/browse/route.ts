@@ -3,6 +3,9 @@ import { isAnime, tmdb } from "@/lib/tmdb-server";
 
 export const dynamic = "force-dynamic";
 
+/** TMDB caps deep pages; keep requests bounded. */
+const MAX_PAGE = 500;
+
 type Category = "discover" | "trending" | "popular" | "top-rated" | "in-cinema";
 
 /** One TMDB endpoint per column. Endpoints without media_type get an explicit type. */
@@ -15,11 +18,14 @@ const SHELVES: Record<Category, { path: string; params?: Record<string, string>;
 };
 
 export async function GET(req: Request) {
-  const category = (new URL(req.url).searchParams.get("category") ?? "") as Category;
+  const url = new URL(req.url);
+  const category = (url.searchParams.get("category") ?? "") as Category;
   const shelf = SHELVES[category];
   if (!shelf) return Response.json({ error: "Unknown category" }, { status: 400 });
+  const raw = Number(url.searchParams.get("page") ?? "1");
+  const page = Number.isFinite(raw) ? Math.min(Math.max(Math.floor(raw), 1), MAX_PAGE) : 1;
   try {
-    const data = await tmdb(shelf.path, shelf.params ?? {}, 3600);
+    const data = await tmdb(shelf.path, { ...(shelf.params ?? {}), page: String(page) }, 3600);
     const results = (data.results as any[])
       .map((r): SearchResult | null => {
         const type = (r.media_type ?? shelf.type) as MediaType | undefined;
@@ -35,7 +41,11 @@ export async function GET(req: Request) {
       })
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 20);
-    return Response.json({ results });
+    return Response.json({
+      results,
+      page: (data.page as number) || page,
+      totalPages: Math.min((data.total_pages as number) || 1, MAX_PAGE),
+    });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 502 });
   }

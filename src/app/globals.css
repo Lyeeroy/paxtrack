@@ -70,6 +70,33 @@ button {
   display: none;
 }
 
+/* Pull-to-load indicator: portaled to body so the page transform cannot move it.
+   Bottom offset keeps it just above the tab bar (safe area + 72px). */
+.pull-indicator {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 72px);
+  /* Above the tab bar (30), below the detail view (40) and sheet (45). */
+  z-index: 35;
+  display: flex;
+  height: 44px;
+  width: 44px;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 0) scale(0.8);
+}
+
+/* The dots are sticky inside the transformed subtree; fade them while pulling. */
+.browse-dots {
+  transition: opacity 140ms ease-out;
+}
+[data-pulling] .browse-dots {
+  opacity: 0;
+}
+
 @keyframes slide-in {
   from {
     transform: translateX(24px);

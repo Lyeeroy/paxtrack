@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { Item, SearchResult } from "@/lib/types";
+import { uniqueResults } from "@/lib/paged";
 import Browse from "./Browse";
 import MediaRow from "./MediaRow";
+import PullUpToLoad from "./PullUpToLoad";
 import { Empty, IconSearch, ScreenHeader } from "./ui";
 
 interface SearchPage {
@@ -15,17 +17,6 @@ interface SearchPage {
 /** One entry per query: the accumulated pages, so returning to a tab restores every loaded result. */
 const cache = new Map<string, SearchPage>();
 let lastQuery = "";
-
-/** TMDB can repeat a title across pages; keep ids unique in the rendered list. */
-function uniqueResults(list: SearchResult[]): SearchResult[] {
-  const seen = new Set<string>();
-  return list.filter((r) => {
-    const id = `${r.type}-${r.tmdbId}`;
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-}
 
 export default function Search({
   items,
@@ -47,7 +38,6 @@ export default function Search({
   const [loadingMore, setLoadingMore] = useState(false);
   const seq = useRef(0);
   const loadingMoreRef = useRef(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     lastQuery = q;
@@ -126,21 +116,8 @@ export default function Search({
     }
   }, [q]);
 
-  // Re-observe after each page so a still-visible sentinel can load the next one.
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) void loadMore();
-      },
-      { rootMargin: "240px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [loadMore, page, totalPages]);
-
   const tracked = new Map(items.map((i) => [i.id, i]));
+  const canPull = results.length > 0 && page < totalPages && state === "idle" && !loadingMore;
 
   return (
     <div>
@@ -167,7 +144,7 @@ export default function Search({
       {!q.trim() ? (
         <Browse items={items} onOpen={onOpen} onOverscroll={onSwipeTab} />
       ) : (
-        <>
+        <PullUpToLoad canLoad={canPull} onLoad={loadMore}>
           {state === "offline" ? <Empty title="You're offline" hint="Search needs a connection. Your library works offline." /> : null}
           {state === "error" ? <Empty title="Couldn't reach TMDB" hint="Try again in a moment." /> : null}
           {state === "loading" && !results.length ? <Empty title="Searching…" /> : null}
@@ -185,13 +162,14 @@ export default function Search({
           </ul>
 
           {results.length > 0 && page < totalPages ? (
-            <div ref={sentinelRef} className="px-4 py-6 text-center">
+            <div className="px-4 py-6 text-center">
               {loadingMore ? (
                 <p role="status" className="text-xs text-faint">
                   Loading more…
                 </p>
               ) : (
                 <button
+                  data-pull-allow-click
                   onClick={() => void loadMore()}
                   className="h-10 rounded-full bg-surface px-4 text-[13px] text-dim active:bg-raised"
                 >
@@ -200,7 +178,7 @@ export default function Search({
               )}
             </div>
           ) : null}
-        </>
+        </PullUpToLoad>
       )}
     </div>
   );

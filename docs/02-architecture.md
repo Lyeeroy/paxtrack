@@ -17,7 +17,7 @@
   Server (src/app/... routes, src/proxy.ts, supabase/schema.sql)
 ```
 
-Rule of thumb: **components never touch IndexedDB, Supabase or `fetch` directly.** They call functions from `src/lib/` and subscribe with a `useX()` hook. `Search.tsx` is a small exception — it owns its own transient query cache and fetches `/api/tmdb/search`; `Browse.tsx` likewise caches its five category lists from `/api/tmdb/browse`. Both still write through `addItem()` / `createPreview()` (via `onOpen` for Browse).
+Rule of thumb: **components never touch IndexedDB, Supabase or `fetch` directly.** They call functions from `src/lib/` and subscribe with a `useX()` hook. `Search.tsx` is a small exception — it owns its own transient query cache and fetches `/api/tmdb/search`; `Browse.tsx` likewise caches its five paginated category lists from `/api/tmdb/browse` as page slots (5-page cap, shared in-flight requests). Both still write through `addItem()` / `createPreview()` (via `onOpen` for Browse).
 
 ## The in-memory store (`src/lib/store.ts`)
 
@@ -71,7 +71,7 @@ Why pull before push: pushing first could overwrite a newer cloud copy with stal
 ## Metadata flow (`src/app/api/tmdb/*`)
 
 - `GET /api/tmdb/search?q=…&page=…` proxies `/search/multi` with `page` (or `/trending/all/week` for an empty `q`); maps TMDB results to `SearchResult`, marks anime via `isAnime()` (genre 16 + Japanese language/origin), and returns `page`/`totalPages`. Page is clamped to 1–500.
-- `GET /api/tmdb/browse?category=…` serves the five Search-landing columns: `discover` (`/discover/tv`), `trending` (`/trending/all/week`), `popular` and `top-rated` (movie endpoints) and `in-cinema` (`/movie/now_playing`). Returns up to 20 `SearchResult`s per category; endpoints without `media_type` get an explicit type.
+- `GET /api/tmdb/browse?category=…&page=…` serves the five Search-landing columns: `discover` (`/discover/tv`), `trending` (`/trending/all/week`), `popular` and `top-rated` (movie endpoints) and `in-cinema` (`/movie/now_playing`). Returns up to 20 `SearchResult`s plus `page`/`totalPages`; page is clamped to 1–500 and endpoints without `media_type` get an explicit type. The client caps each column at 5 pages.
 - `GET /api/tmdb/title?type=&id=` proxies movie or TV details. For TV it fetches seasons in chunks of 15 via `append_to_response`, returning the full `TitlePayload` including every episode's air date.
 - `src/lib/tmdb-server.ts` holds the only code that reads `TMDB_API_KEY` and calls TMDB, with `fetch(..., { next: { revalidate } })`. The key never reaches the browser.
 - `refresh.ts` refreshes stale items (default 6 h) with a 2-worker queue, deduplicating in-flight requests by `epoch:itemId`. `Detail.tsx` refreshes the opened title when its data is missing or older than 1 h.
