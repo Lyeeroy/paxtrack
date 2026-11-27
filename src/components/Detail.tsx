@@ -164,6 +164,7 @@ export default function Detail({
         scrollRef={scrollRef}
         actionLabel="open details"
         busyLabel="Opening details"
+        indicator="chevron"
       >
         <div className="mx-auto max-w-xl pb-[calc(env(safe-area-inset-bottom)+32px)]">
           <div className="sticky top-0 z-10 flex items-center bg-black/90 px-2 pt-[env(safe-area-inset-top)]">

@@ -82,6 +82,7 @@ export default function PullUpToLoad({
   scrollRef,
   actionLabel = "load more",
   busyLabel = "Loading more",
+  indicator = "ring",
   children,
 }: {
   canLoad: boolean;
@@ -96,10 +97,13 @@ export default function PullUpToLoad({
   /** Used in the progressbar's aria labels. */
   actionLabel?: string;
   busyLabel?: string;
+  /** `ring` fills as you pull; `chevron` lifts as the sheet rises from the bottom. */
+  indicator?: "ring" | "chevron";
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<SVGCircleElement | null>(null);
+  const chevronRef = useRef<SVGSVGElement | null>(null);
   const indicatorRef = useRef<HTMLDivElement | null>(null);
   const drag = useRef<Drag | null>(null);
   const busyRef = useRef(false);
@@ -150,6 +154,11 @@ export default function PullUpToLoad({
     }
     const ring = ringRef.current;
     if (ring) ring.style.strokeDashoffset = String(RING);
+    const chevron = chevronRef.current;
+    if (chevron) {
+      chevron.style.opacity = "";
+      chevron.style.transform = "";
+    }
   }, []);
 
   const reset = useCallback(() => {
@@ -283,6 +292,12 @@ export default function PullUpToLoad({
       const ring = ringRef.current;
       if (ring) ring.style.strokeDashoffset = String(RING * (1 - progress));
 
+      const chevron = chevronRef.current;
+      if (chevron) {
+        chevron.style.opacity = String(0.4 + 0.6 * progress);
+        chevron.style.transform = `translateY(${(1 - progress) * 5}px)`;
+      }
+
       const ind = indicatorRef.current;
       if (ind) {
         const showAt = down ? APPEAR_AT : SLOP;
@@ -408,6 +423,26 @@ export default function PullUpToLoad({
                   aria-valuetext={busyLabel}
                   className="h-11 w-11 animate-spin rounded-full border-[3px] border-line border-t-accent"
                 />
+              ) : indicator === "chevron" ? (
+                <svg
+                  ref={chevronRef}
+                  viewBox="0 0 44 44"
+                  role="progressbar"
+                  aria-label={`Pull to ${actionLabel}`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={0}
+                  className="h-11 w-11"
+                >
+                  <path
+                    d="M13 26 22 17 31 26"
+                    fill="none"
+                    stroke="var(--color-accent)"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               ) : (
                 <svg
                   viewBox="0 0 44 44"
