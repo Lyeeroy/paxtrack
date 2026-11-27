@@ -45,6 +45,8 @@ export function FilterDrawer({
   activeCount,
   resetLabel,
   onReset,
+  resetDisabled,
+  footerAction,
   children,
 }: {
   open: boolean;
@@ -54,6 +56,10 @@ export function FilterDrawer({
   activeCount: number;
   resetLabel: string;
   onReset: () => void;
+  /** Overrides the default "disabled when no filters" rule (e.g. a Back button). */
+  resetDisabled?: boolean;
+  /** Pass null to hide the second slot entirely; undefined keeps the Done button. */
+  footerAction?: ReactNode | null;
   children: ReactNode;
 }) {
   return (
@@ -96,19 +102,23 @@ export function FilterDrawer({
             <Button
               variant="ghost"
               onClick={onReset}
-              disabled={activeCount === 0}
+              disabled={resetDisabled ?? activeCount === 0}
               className="h-11 flex-1 rounded-xl text-dim"
             >
               {resetLabel}
             </Button>
-            <DrawerClose
-              className={cn(
-                buttonVariants({ variant: "default" }),
-                "h-11 flex-1 rounded-xl bg-fg text-black hover:bg-fg/90",
-              )}
-            >
-              Done
-            </DrawerClose>
+            {footerAction !== undefined ? (
+              footerAction
+            ) : (
+              <DrawerClose
+                className={cn(
+                  buttonVariants({ variant: "default" }),
+                  "h-11 flex-1 rounded-xl bg-fg text-black hover:bg-fg/90",
+                )}
+              >
+                Done
+              </DrawerClose>
+            )}
           </div>
         </DrawerFooter>
       </DrawerContent>

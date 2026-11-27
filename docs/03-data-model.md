@@ -58,6 +58,7 @@ Important behaviours:
 | `tracker:since:<uid>` | Microsecond `server_ts` cursor: remote rows up to this point have been pulled. |
 | `tracker:synced-at:<uid>` | Last successful sync time, displayed in Settings. |
 | `tracker:notif` | `"1"` when release notifications are enabled by the user. |
+| `tracker:customLinks` | JSON array of URL **templates** added from the info drawer's Links page (global; not part of backups). Each is expanded on use so `{season}`/`{episode}` follow current library progress (see `src/lib/links.ts`). |
 | legacy: `tracker:key`, `tracker:last`, `tracker:pushed`, `tracker:synced-at` | Removed at `startAutoSync()`; from the old custom sync-key backend. |
 
 Note the **unit mismatch**: `updatedAt`/`pushed`/`synced-at` are epoch **milliseconds** from JavaScript; `server_ts`/`since` are epoch **microseconds** from Postgres (`extract(epoch from clock_timestamp()) * 1000000`). Never compare them directly.

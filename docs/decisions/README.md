@@ -37,3 +37,4 @@ Write about *why*, not *what* — the code already says what. Update the status 
 - [0011 — Pull down opens the detail info sheet](./0011-pull-down-opens-detail-sheet.md) — reusing the pull gesture inverted, with the indicator layered between detail and sheet.
 - [0012 — Filtered Discover keeps its own cache lane](./0012-filtered-discover.md) — server-side filters, a per-filter page cache, and why Discover can end shorter than the other columns.
 - [0013 — shadcn Drawer replaces the in-house Sheet](./0013-drawer-replaces-sheet.md) — why the modal now delegates gestures, snap points and focus to Base UI.
+- [0014 — Discover filter history in localStorage](./0014-local-discover-filter-history.md) — the Discover drawer's History button, auto-recorded filter sets and starred entries.

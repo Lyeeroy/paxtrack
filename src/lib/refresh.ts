@@ -1,14 +1,17 @@
 import { getSnapshot, getStoreEpoch, saveTitle } from "./store";
-import type { Item, TitlePayload } from "./types";
+import type { CastMember, Item, TitlePayload, WatchInfo } from "./types";
 
 const inflight = new Map<string, Promise<boolean>>();
 
-/** Descriptive metadata shown in the info sheet. Session-only; never persisted. */
+/** Descriptive metadata shown in the info drawer. Session-only; never persisted. */
 export interface TitleInfo {
   overview: string | null;
   genres: string[];
   voteAverage: number | null;
   runtime: number | null;
+  imdbId: string | null;
+  cast: CastMember[];
+  watch: WatchInfo | null;
 }
 
 const infoCache = new Map<string, { info: TitleInfo; at: number }>();
@@ -22,6 +25,9 @@ function cacheInfo(id: string, p: TitlePayload) {
       genres: p.genres ?? [],
       voteAverage: p.voteAverage ?? null,
       runtime: p.runtime ?? null,
+      imdbId: p.imdbId ?? null,
+      cast: p.cast ?? [],
+      watch: p.watch ?? null,
     },
     at: Date.now(),
   });

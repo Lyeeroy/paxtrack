@@ -38,6 +38,8 @@ src/app/                     Route Handlers and route files (server-side)
 src/components/              All UI, every file "use client"
   App.tsx                    Shell, tab state, boot sequence, detail navigation
   Library / Detail / Search / Browse / Upcoming / History / Settings / CloudSync
+  InfoDrawer.tsx             Detail's four-page info drawer (Info/Cast/Watch/Links)
+  NavCapsule.tsx             Shared sliding-pill capsule for app tabs and drawer pages
   ui.tsx                     Icons and shared primitives (Poster, Progress, SwipeRow, …)
 src/lib/                     State and side effects
   store.ts                   In-memory library + IndexedDB persistence (the source of truth)
@@ -45,7 +47,7 @@ src/lib/                     State and side effects
   sync.ts                    Supabase push/pull engine and status
   auth.ts / auth-config.ts   Auth state, username↔email mapping, mode switch
   episodes.ts                Episode flattening, stats, date helpers
-  backup.ts / refresh.ts / notify.ts / actions.ts / toast.ts
+  backup.ts / refresh.ts / notify.ts / actions.ts / toast.ts / links.ts
   supabase/{client,server,config}.ts
 src/proxy.ts                 Refreshes Supabase auth cookies on navigation (formerly middleware)
 supabase/schema.sql          Table, triggers, indexes and RLS policies

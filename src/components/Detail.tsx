@@ -7,16 +7,9 @@ import { cachedInfo, loadInfo, refreshItem, type TitleInfo } from "@/lib/refresh
 import { markUpTo, removeItem, setSeason, setStatus, toggleEpisode, unmarkFrom } from "@/lib/store";
 import { haptic, showToast } from "@/lib/toast";
 import type { EpData, Item, Status } from "@/lib/types";
+import InfoDrawer from "./InfoDrawer";
 import PullUpToLoad from "./PullUpToLoad";
-import { IconBack, IconCheck, IconClose, Poster, Progress, SwipeRow, TypeTag } from "./ui";
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "./ui/drawer";
+import { IconBack, IconCheck, Poster, Progress, SwipeRow, TypeTag } from "./ui";
 
 const STATUSES: { id: Status; label: string }[] = [
   { id: "watching", label: "Watching" },
@@ -24,22 +17,6 @@ const STATUSES: { id: Status; label: string }[] = [
   { id: "completed", label: "Done" },
   { id: "dropped", label: "Dropped" },
 ];
-
-function formatRuntime(min: number | null) {
-  if (!min || min <= 0) return null;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return h ? `${h}h${m ? ` ${m}m` : ""}` : `${m}m`;
-}
-
-function InfoRow({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 px-4 py-3.5">
-      <dt className="shrink-0 text-xs text-faint">{label}</dt>
-      <dd className="text-right text-[15px] text-fg">{value || "—"}</dd>
-    </div>
-  );
-}
 
 const EpRow = memo(function EpRow({ id, ep, watched, aired }: { id: string; ep: Ep; watched: boolean; aired: boolean }) {
   return (
@@ -138,6 +115,13 @@ export default function Detail({
   const current = season ?? st.next?.s ?? st.upcoming?.s ?? seasons[seasons.length - 1] ?? 1;
   const list = useMemo(() => eps.filter((e) => e.s === current), [eps, current]);
   const seasonDone = list.length > 0 && list.every((e) => item.watched[e.key]);
+  // {season}/{episode} in the Links page track the library's up-next position.
+  // When there is no next episode, stay in the displayed season at the first
+  // unwatched entry (or the last one if the season is already complete).
+  const linkSeason = st.next?.s ?? current;
+  const lastWatchedE = list.filter((e) => item.watched[e.key]).map((e) => e.e).pop() ?? 0;
+  const lastE = list.length ? list[list.length - 1].e : 0;
+  const linkEpisode = st.next?.e ?? list.find((e) => !item.watched[e.key])?.e ?? Math.min(lastWatchedE + 1 || 1, lastE || 1);
 
   const meta = [
     item.type === "movie" ? (item.releaseDate ? item.releaseDate.slice(0, 4) : "") : st.total ? `${st.total} episodes` : "",
@@ -204,7 +188,7 @@ export default function Detail({
                   <span key={m}>· {m}</span>
                 ))}
               </div>
-              <p className="mt-1 text-[11px] text-faint">Tap poster or title for details</p>
+              <p className="mt-1 text-[11px] text-faint">Tap for details · drag up to expand</p>
               <div className="mt-4">
                 <div className="mb-1.5 flex justify-between text-xs text-dim">
                   <span>{item.type === "movie" ? (item.watched.m ? "Watched" : "Not watched") : `${st.watched} / ${st.aired || st.total} watched`}</span>
@@ -338,66 +322,15 @@ export default function Detail({
         </div>
       </PullUpToLoad>
 
-      <Drawer
+      <InfoDrawer
+        item={item}
+        info={info}
+        infoResolved={infoResolved}
         open={infoOpen}
-        onOpenChange={(next) => {
-          if (!next) onCloseInfo();
-        }}
-        snapPoints={[0.78, 1]}
-        showSwipeHandle
-      >
-        <DrawerContent className="mx-auto max-w-xl rounded-t-2xl border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]">
-          <DrawerHeader className="relative pb-0 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
-            <div className="min-w-0 flex-1">
-              <DrawerTitle className="truncate text-[16px] font-semibold leading-tight text-fg">
-                {item.title}
-              </DrawerTitle>
-              <DrawerDescription className="mt-0.5 truncate text-xs text-dim">
-                Details
-              </DrawerDescription>
-            </div>
-            <DrawerClose
-              aria-label="Close"
-              className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
-            >
-              <IconClose className="size-5" />
-            </DrawerClose>
-          </DrawerHeader>
-          <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
-            <div className="px-4 pb-4 pt-1">
-          {info?.overview ? (
-            <p className="text-[14px] leading-relaxed text-dim">{info.overview}</p>
-          ) : !infoResolved ? (
-            <p role="status" className="text-[13px] text-faint">
-              Loading synopsis…
-            </p>
-          ) : (
-            <p className="text-[13px] text-faint">No synopsis available.</p>
-          )}
-          {info?.genres?.length ? (
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {info.genres.map((g) => (
-                <span key={g} className="rounded-full bg-raised px-3 py-1.5 text-[13px] text-dim">
-                  {g}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <dl className="mt-5 divide-y divide-line/70 overflow-hidden rounded-2xl bg-raised">
-            <InfoRow label="Rating" value={info?.voteAverage ? `${info.voteAverage.toFixed(1)} / 10` : null} />
-            <InfoRow label={item.type === "movie" ? "Runtime" : "Episode length"} value={formatRuntime(info?.runtime ?? null)} />
-            <InfoRow label="Release date" value={item.releaseDate?.slice(0, 10) ?? null} />
-            <InfoRow label="Type" value={item.anime ? "Anime" : item.type === "tv" ? "TV series" : "Movie"} />
-            <InfoRow
-              label={item.type === "tv" ? "Series status" : "Release status"}
-              value={item.tvStatus ?? (item.type === "tv" && st.upcoming ? "Returning Series" : null)}
-            />
-            <InfoRow label="Added" value={new Date(item.addedAt).toISOString().slice(0, 10)} />
-          </dl>
-            </div>
-          </div>
-        </DrawerContent>
-      </Drawer>
+        onClose={onCloseInfo}
+        season={linkSeason}
+        episode={linkEpisode}
+      />
     </div>
   );
 }

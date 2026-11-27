@@ -90,6 +90,47 @@ export const IconUpload = ({ className }: IconProps) => (
     <path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
   </svg>
 );
+export const IconInfo = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5.5M12 7.5h.01" />
+  </svg>
+);
+export const IconCast = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3.5 19v-1.5A4.5 4.5 0 0 1 8 13h2a4.5 4.5 0 0 1 4.5 4.5V19" />
+    <path d="M16 5.6a3 3 0 0 1 0 5.8M17.5 13.4a4.5 4.5 0 0 1 3 4.2V19" />
+  </svg>
+);
+export const IconWatch = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <path d="m10.5 9.5 5 2.5-5 2.5z" />
+  </svg>
+);
+export const IconLink = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="M10 14a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7L11 7.3" />
+    <path d="M14 10a4 4 0 0 0-5.7 0L6 12.3a4 4 0 0 0 5.7 5.7L13 16.7" />
+  </svg>
+);
+export const IconExpandUp = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="m6 14 6-6 6 6" />
+  </svg>
+);
+export const IconExpandDown = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="m6 10 6 6 6-6" />
+  </svg>
+);
+export const IconExternal = ({ className }: IconProps) => (
+  <svg {...base} className={className}>
+    <path d="M13 5h6v6M19 5l-8 8" />
+    <path d="M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" />
+  </svg>
+);
 
 export function posterUrl(path: string | null, w: 92 | 154 | 185 = 154) {
   return path ? `https://image.tmdb.org/t/p/w${w}${path}` : null;

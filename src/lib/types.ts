@@ -35,6 +35,22 @@ export interface SearchResult {
   anime: boolean;
 }
 
+export interface CastMember {
+  name: string;
+  character: string | null;
+  profile: string | null;
+}
+
+/** Provider names for one region, used by the info drawer's "Where to watch" page. */
+export interface WatchInfo {
+  country: string;
+  link: string | null;
+  flatrate: string[];
+  free: string[];
+  rent: string[];
+  buy: string[];
+}
+
 export interface TitlePayload {
   type: MediaType;
   tmdbId: number;
@@ -48,6 +64,9 @@ export interface TitlePayload {
   genres?: string[];
   voteAverage?: number | null;
   runtime?: number | null;
+  imdbId?: string | null;
+  cast?: CastMember[];
+  watch?: WatchInfo | null;
   seasons: EpData["seasons"];
 }
 
