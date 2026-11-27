@@ -83,6 +83,7 @@ export default function Detail({
   const [info, setInfo] = useState<TitleInfo | null>(() => cachedInfo(item.id));
   const [infoResolved, setInfoResolved] = useState(() => !!info);
   const edge = useRef<{ x: number; y: number } | null>(null);
+  const suppressBackClick = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const today = todayStr();
 
@@ -136,7 +137,10 @@ export default function Detail({
       aria-label={item.title}
       aria-hidden={infoOpen || undefined}
       onPointerDownCapture={(e) => {
-        if ((e.target as HTMLElement).closest("[data-swipe]")) return;
+        suppressBackClick.current = false;
+        // The left-edge back gesture owns the first 24 px even over episode
+        // rows, which are full-bleed. Otherwise SwipeRow claims the drag and
+        // marks episodes instead of closing the detail view.
         if (e.clientX < 24) {
           edge.current = { x: e.clientX, y: e.clientY };
           e.stopPropagation();
@@ -145,7 +149,20 @@ export default function Detail({
       onPointerUp={(e) => {
         const s = edge.current;
         edge.current = null;
-        if (s && e.clientX - s.x > 70 && Math.abs(e.clientY - s.y) < 60) onClose();
+        if (s && e.clientX - s.x > 70 && Math.abs(e.clientY - s.y) < 60) {
+          // SwipeRow never saw pointer-down, so its own dragged-click guard
+          // stays off; suppress the click that would toggle the episode below.
+          suppressBackClick.current = true;
+          onClose();
+        }
+      }}
+      onPointerCancel={() => (edge.current = null)}
+      onClickCapture={(e) => {
+        if (suppressBackClick.current) {
+          suppressBackClick.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }
       }}
     >
       <PullUpToLoad

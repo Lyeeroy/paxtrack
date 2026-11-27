@@ -44,6 +44,7 @@ The visual style is a deliberate, restrained AMOLED dark theme. It is not a gene
 - `PullUpToLoad` takes `indicator="ring" | "chevron"`, defaulting to `ring`. Detail passes `chevron`: an **upward** chevron (the info sheet rises from the bottom) that brightens and lifts slightly as the gesture completes. The ring — and the rest of the gesture mechanics, labels and aria — is unchanged for pagination, Search and Browse.
 - A revealed action is always mirrored by a tap control (the `+` button, status buttons, the back button). **Gestures accelerate; they never gate.** Every gesture must have a non-gesture path.
 - Rows inside swipe containers keep `data-swipe` so the screen-level tab swipe ignores them; inputs and textareas are excluded the same way.
+- Detail's left-edge back drag takes priority inside the first 24 px even over swipe rows, so episode row swipes start outside that strip; every row action still has its tap fallback.
 
 ### 3. Fast navigation is a feature
 
