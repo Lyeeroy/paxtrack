@@ -50,7 +50,7 @@ The root `AGENTS.md` block is generated and re-added by `next dev`. It points to
 - **Do not hand-roll swipe handling.** Base UI owns the scroll-vs-swipe decision, velocity threshold and dismissal distance; the old 120 ms scroll-lock and 0.35 px/ms constants were removed. Keep gesture opt-outs on the components that already drag (swipe rows, carousels) rather than adding global listeners.
 - **Detents come from `snapPoints`.** The detail passes `[0.78, 1]`; up from the header expands, down from expanded collapses, down from collapsed dismisses. The filter sheets deliberately have no snap points — forcing 78dvh would leave a mostly empty panel.
 - **Portal is automatic.** `DrawerContent` portals to `document.body` and Base UI sets `aria-hidden`/`inert` on the background. The detail view is `aria-hidden` and `overflow-hidden` while the drawer is open; never render the overlay inside it.
-- **Keep the motion values in sync.** Drawer's 260/200 ms durations live in `src/components/ui/drawer.tsx`; `--ease-sheet` lives in `globals.css`. The global `prefers-reduced-motion` rule collapses both. Also keep `body { position: relative }` — iOS 26 Safari needs it for the overlay to cover the scrolled viewport.
+- **Do not retime the drawer.** `src/components/ui/drawer.tsx` keeps shadcn's generated 450 ms transition and swipe-strength-scaled exit. The global `prefers-reduced-motion` rule used to collapse every transition to 1 ms, which made the drawer vanish with no animation; it now exempts `[data-slot="drawer-popup"]` and the overlay. Keep `body { position: relative }` — iOS 26 Safari needs it for the overlay to cover the scrolled viewport.
 
 ## Product logic traps
 

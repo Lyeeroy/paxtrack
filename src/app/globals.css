@@ -182,6 +182,14 @@ button {
   .splash-edge {
     animation: none !important;
   }
+  /* The Drawer's enter/exit is coordinated by Base UI via data-starting-style
+     and data-ending-style. Collapsing every transition to 1ms above makes it
+     disappear with no motion, so keep Base UI's timing for the drawer parts. */
+  [data-slot="drawer-popup"],
+  [data-slot="drawer-overlay"],
+  [data-slot="drawer-popup"]::after {
+    transition-duration: 450ms !important;
+  }
 }
 
 @theme inline {
