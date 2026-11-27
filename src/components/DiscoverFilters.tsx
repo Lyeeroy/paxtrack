@@ -1,95 +1,58 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useMemo } from "react";
 import {
+  activeFilterCount,
   DEFAULT_DISCOVER_FILTERS,
-  filtersActive,
   GENRES,
   LANGUAGES,
   normalizeFilters,
   RATINGS,
   type DiscoverFilters,
 } from "@/lib/discover";
-import { IconBack, IconClose } from "./ui";
 import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from "./ui/drawer";
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxValue,
+  useComboboxAnchor,
+} from "@/components/ui/combobox";
+import {
+  FilterCombobox,
+  FilterDrawer,
+  FilterSection,
+  FilterToggle,
+  FilterYearRange,
+  type FilterOption,
+} from "./FilterControls";
 
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`h-9 rounded-full px-3.5 text-[13px] active:scale-95 ${
-        active ? "bg-fg font-medium text-black" : "bg-surface text-dim active:bg-raised"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
+const TYPES: FilterOption<DiscoverFilters["type"]>[] = [
+  { value: "tv", label: "TV series" },
+  { value: "movie", label: "Movies" },
+];
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <>
-      <p className="mt-5 text-[11px] font-medium uppercase tracking-wider text-faint first:mt-0">{title}</p>
-      <div className="mt-2">{children}</div>
-    </>
-  );
-}
+const RATING_OPTIONS: FilterOption<string>[] = RATINGS.map((rating) => ({
+  value: String(rating),
+  label: rating ? `${rating}+` : "Any",
+}));
 
-/** Keeps a draft while typing: a partially typed "2" is not yet a valid year. */
-function YearRange({
-  from,
-  to,
-  onChange,
-}: {
-  from: string;
-  to: string;
-  onChange: (years: { from: string; to: string }) => void;
-}) {
-  const [draft, setDraft] = useState({ from, to });
-  useEffect(() => {
-    if (draft.from === from && draft.to === to) return;
-    const t = setTimeout(() => onChange(draft), 400);
-    return () => clearTimeout(t);
-  }, [draft, from, to, onChange]);
+const LANGUAGE_OPTIONS: FilterOption<string>[] = [
+  { value: "", label: "Any language" },
+  ...LANGUAGES.map((language) => ({ value: language.code, label: language.label })),
+];
 
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        type="number"
-        inputMode="numeric"
-        min={1900}
-        placeholder="From"
-        aria-label="Release year from"
-        value={draft.from}
-        onChange={(e) => setDraft((y) => ({ ...y, from: e.target.value }))}
-        className="h-11 min-w-0 flex-1 rounded-xl bg-raised px-3 text-[15px] text-fg outline-none placeholder:text-faint focus-visible:ring-1 focus-visible:ring-accent/60"
-      />
-      <span className="text-xs text-faint">to</span>
-      <input
-        type="number"
-        inputMode="numeric"
-        min={1900}
-        placeholder="To"
-        aria-label="Release year to"
-        value={draft.to}
-        onChange={(e) => setDraft((y) => ({ ...y, to: e.target.value }))}
-        className="h-11 min-w-0 flex-1 rounded-xl bg-raised px-3 text-[15px] text-fg outline-none placeholder:text-faint focus-visible:ring-1 focus-visible:ring-accent/60"
-      />
-    </div>
-  );
-}
-
-/** Discover filter sheet. Every control applies on the spot; there is no Apply button. */
+/**
+ * Discover filter sheet. A medium must be picked first because the genre ids
+ * differ for TV and Movies: tapping the selected medium clears every filter
+ * and returns to the five Browse columns. Every other control applies on the
+ * spot; there is no Apply button. Rows and the footer are fixed so Base UI's
+ * measured drawer height never moves (ADR 0013).
+ */
 export function DiscoverFilterSheet({
   open,
   onClose,
@@ -102,100 +65,119 @@ export function DiscoverFilterSheet({
   onChange: (f: DiscoverFilters) => void;
 }) {
   const set = (patch: Partial<DiscoverFilters>) => onChange(normalizeFilters({ ...filters, ...patch }));
+  const genreAnchor = useComboboxAnchor();
+
+  const genreOptions = useMemo<FilterOption<string>[]>(
+    () => GENRES[filters.type || "tv"].map((genre) => ({ value: genre.id, label: genre.label })),
+    [filters.type],
+  );
+  const selectedGenres = genreOptions.filter((option) => filters.genre.includes(option.value));
 
   return (
-    <Drawer
+    <FilterDrawer
       open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      showSwipeHandle
+      onClose={onClose}
+      title="Discover filters"
+      description={filters.type ? "Results update as you choose" : "Pick TV or Movies to filter"}
+      activeCount={activeFilterCount(filters)}
+      resetLabel="Reset filters"
+      onReset={() => onChange(DEFAULT_DISCOVER_FILTERS)}
     >
-      <DrawerContent className="mx-auto max-w-xl rounded-t-2xl border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]">
-        <DrawerHeader className="relative pb-0 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
-          <div className="min-w-0 flex-1">
-            <DrawerTitle className="truncate text-[16px] font-semibold leading-tight text-fg">
-              Discover filters
-            </DrawerTitle>
-            <DrawerDescription className="mt-0.5 truncate text-xs text-dim">
-              Results update as you choose
-            </DrawerDescription>
-          </div>
-          <DrawerClose
-            aria-label="Close"
-            className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
+      <FilterSection title="Type">
+        <FilterToggle
+          label="Type"
+          value={filters.type}
+          options={TYPES}
+          clearValue=""
+          onChange={(type) => (type ? set({ type }) : onChange(DEFAULT_DISCOVER_FILTERS))}
+        />
+      </FilterSection>
+
+      {/* Native fieldset disabled is enough for Base UI inputs and buttons. */}
+      <fieldset disabled={!filters.type} className="flex flex-col gap-5">
+        <FilterSection title="Genre">
+          {/* shadcn's documented multiple pattern: chips + anchored popup. */}
+          <Combobox
+            multiple
+            autoHighlight
+            disabled={!filters.type}
+            items={genreOptions}
+            value={selectedGenres}
+            itemToStringValue={(option: FilterOption<string>) => option.label}
+            onValueChange={(next) =>
+              set({ genre: (next as FilterOption<string>[]).map((option) => option.value) })
+            }
           >
-            <IconClose className="size-5" />
-          </DrawerClose>
-        </DrawerHeader>
-        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
-          <div className="px-4 pb-4 pt-1">
-        <Section title="Type">
-          <div className="flex flex-wrap gap-1.5">
-            {(["tv", "movie"] as const).map((t) => (
-              <Chip key={t} label={t === "tv" ? "TV series" : "Movies"} active={filters.type === t} onClick={() => set({ type: t })} />
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Genre">
-          <div className="flex flex-wrap gap-1.5">
-            <Chip label="Any" active={!filters.genre} onClick={() => set({ genre: "" })} />
-            {GENRES[filters.type].map((g) => (
-              <Chip key={g.id} label={g.label} active={filters.genre === g.id} onClick={() => set({ genre: g.id })} />
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Language">
-          <div className="relative">
-            <select
-              value={filters.language}
-              onChange={(e) => set({ language: e.target.value })}
-              aria-label="Original language"
-              className="h-11 w-full appearance-none rounded-xl bg-raised px-3 pr-9 text-[15px] text-fg outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
+            <ComboboxChips
+              ref={genreAnchor}
+              className="min-h-11 w-full rounded-xl border-0 bg-raised px-1.5 py-1 focus-within:ring-1 focus-within:ring-accent/60 has-[:disabled]:opacity-50 dark:has-disabled:bg-input/80"
             >
-              <option value="">Any language</option>
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-            <IconBack className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 rotate-180 text-dim" />
-          </div>
-        </Section>
+              <ComboboxValue>
+                {(values: FilterOption<string>[]) => (
+                  <>
+                    {values.map((value) => (
+                      <ComboboxChip
+                        key={value.value}
+                        className="h-7 shrink-0 bg-fg/10 px-2 text-[13px] text-fg"
+                      >
+                        {value.label}
+                      </ComboboxChip>
+                    ))}
+                    <ComboboxChipsInput
+                      aria-label="Genres"
+                      placeholder="Add genre"
+                      disabled={!filters.type}
+                      className="min-w-16 flex-1 bg-transparent text-[16px] text-fg outline-none placeholder:text-dim"
+                    />
+                  </>
+                )}
+              </ComboboxValue>
+            </ComboboxChips>
+            <ComboboxContent anchor={genreAnchor} className="rounded-xl border-line bg-raised text-fg shadow-xl">
+              <ComboboxEmpty className="px-3 py-2 text-[13px] text-dim">No genres found.</ComboboxEmpty>
+              <ComboboxList className="max-h-[min(50dvh,20rem)]">
+                {(option: FilterOption<string>) => (
+                  <ComboboxItem
+                    key={option.value}
+                    value={option}
+                    className="py-2.5 pr-8 pl-3 text-[15px] data-highlighted:bg-surface data-highlighted:text-fg focus:bg-surface focus:text-fg"
+                  >
+                    {option.label}
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
+        </FilterSection>
 
-        <Section title="Minimum rating">
-          <div className="flex flex-wrap gap-1.5">
-            {RATINGS.map((r) => (
-              <Chip key={r} label={r ? `${r}+` : "Any"} active={filters.minRating === r} onClick={() => set({ minRating: r })} />
-            ))}
-          </div>
-        </Section>
+        <FilterSection title="Language">
+          <FilterCombobox
+            label="Original language"
+            value={filters.language}
+            options={LANGUAGE_OPTIONS}
+            onChange={(language) => set({ language })}
+          />
+        </FilterSection>
 
-        <Section title="Release years">
-          <YearRange
-            key={`${filters.yearFrom}:${filters.yearTo}`}
+        <FilterSection title="Minimum rating">
+          <FilterToggle
+            label="Minimum rating"
+            value={String(filters.minRating)}
+            options={RATING_OPTIONS}
+            clearValue="0"
+            onChange={(minRating) => set({ minRating: Number(minRating) })}
+          />
+        </FilterSection>
+
+        <FilterSection title="Release years">
+          <FilterYearRange
             from={filters.yearFrom}
             to={filters.yearTo}
+            disabled={!filters.type}
             onChange={(years) => set({ yearFrom: years.from, yearTo: years.to })}
           />
-        </Section>
-          </div>
-        </div>
-        {filtersActive(filters) ? (
-          <DrawerFooter className="border-t border-line/70 p-4">
-            <button
-              type="button"
-              onClick={() => onChange(DEFAULT_DISCOVER_FILTERS)}
-              className="h-11 w-full rounded-xl text-[14px] text-dim active:bg-raised hover:text-fg"
-            >
-              Reset filters
-            </button>
-          </DrawerFooter>
-        ) : null}
-      </DrawerContent>
-    </Drawer>
+        </FilterSection>
+      </fieldset>
+    </FilterDrawer>
   );
 }

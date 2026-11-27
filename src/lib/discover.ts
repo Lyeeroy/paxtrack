@@ -1,9 +1,10 @@
 import type { MediaType } from "./types";
 
 export interface DiscoverFilters {
-  type: MediaType;
-  /** TMDB genre id, valid for the selected type. */
-  genre: string;
+  /** Empty until the user explicitly picks a medium; genre ids differ per type. */
+  type: MediaType | "";
+  /** TMDB genre ids, valid for the selected type. All of them must match (AND). */
+  genre: string[];
   /** ISO 639-1 original language. */
   language: string;
   /** vote_average.gte, 0–10. */
@@ -14,8 +15,8 @@ export interface DiscoverFilters {
 }
 
 export const DEFAULT_DISCOVER_FILTERS: DiscoverFilters = {
-  type: "tv",
-  genre: "",
+  type: "",
+  genre: [],
   language: "",
   minRating: 0,
   yearFrom: "",
@@ -96,34 +97,48 @@ export const RATINGS = [0, 6, 7, 8, 9];
 
 /** Only allow values we can validate; the same normalizer runs on client and server. */
 export function normalizeFilters(f: DiscoverFilters): DiscoverFilters {
-  const type: MediaType = f.type === "movie" ? "movie" : "tv";
-  const genre = GENRES[type].some((g) => g.id === f.genre) ? f.genre : "";
+  const type: MediaType | "" = f.type === "movie" || f.type === "tv" ? f.type : "";
+  // Sorted ids keep the cache key and TMDB params stable regardless of pick order.
+  const genre = type
+    ? [...new Set(f.genre)].filter((id) => GENRES[type].some((g) => g.id === id)).sort()
+    : [];
   const language = LANGUAGES.some((l) => l.code === f.language) ? f.language : "";
   const rating = Number(f.minRating);
   const minRating = Number.isFinite(rating) && rating > 0 ? Math.min(10, Math.round(rating * 10) / 10) : 0;
   const maxYear = new Date().getFullYear() + 1;
-  const year = (raw: string) => (/^\d{4}$/.test(raw) && Number(raw) >= 1900 && Number(raw) <= maxYear ? raw : "");
+  const year = (raw: string) => (/^\d{4}$/.test(raw) && Number(raw) >= 1990 && Number(raw) <= maxYear ? raw : "");
   const from = year(f.yearFrom);
   const to = year(f.yearTo);
   // A reversed range is almost always a typo; swap instead of returning nothing.
   return { type, genre, language, minRating, yearFrom: from && to && from > to ? to : from, yearTo: from && to && from > to ? from : to };
 }
 
+/** One count per independent control, so the filter sheet can badge itself. */
+export function activeFilterCount(f: DiscoverFilters) {
+  return (
+    (f.type ? 1 : 0) +
+    (f.genre.length ? 1 : 0) +
+    (f.language ? 1 : 0) +
+    (f.minRating > 0 ? 1 : 0) +
+    (f.yearFrom || f.yearTo ? 1 : 0)
+  );
+}
+
 export function filtersActive(f: DiscoverFilters) {
-  return f.type !== DEFAULT_DISCOVER_FILTERS.type || !!f.genre || !!f.language || f.minRating > 0 || !!f.yearFrom || !!f.yearTo;
+  return activeFilterCount(f) > 0;
 }
 
 /** Stable cache-key suffix: changing any filter gives Discover its own page slots. */
 export function discoverCacheKey(f: DiscoverFilters) {
-  return `discover:${f.type}:${f.genre}:${f.language}:${f.minRating}:${f.yearFrom}:${f.yearTo}`;
+  return `discover:${f.type}:${f.genre.join(",")}:${f.language}:${f.minRating}:${f.yearFrom}:${f.yearTo}`;
 }
 
 /** Parameters sent to our own API; the route rebuilds TMDB params from these. */
 export function discoverQuery(f: DiscoverFilters): Record<string, string> {
   return {
     category: "discover",
-    type: f.type,
-    ...(f.genre ? { genre: f.genre } : {}),
+    ...(f.type ? { type: f.type } : {}),
+    ...(f.genre.length ? { genre: f.genre.join(",") } : {}),
     ...(f.language ? { language: f.language } : {}),
     ...(f.minRating ? { minRating: String(f.minRating) } : {}),
     ...(f.yearFrom ? { yearFrom: f.yearFrom } : {}),
@@ -133,11 +148,13 @@ export function discoverQuery(f: DiscoverFilters): Record<string, string> {
 
 /** TMDB discover parameters, shared by the client query and the server route. */
 export function tmdbDiscoverParams(f: DiscoverFilters): Record<string, string> {
-  const date = f.type === "tv" ? "first_air_date" : "primary_release_date";
+  // An unset type is the default TV feed; only an explicit Movie changes this.
+  const date = f.type === "movie" ? "primary_release_date" : "first_air_date";
   return {
     sort_by: "popularity.desc",
     include_adult: "false",
-    ...(f.genre ? { with_genres: f.genre } : {}),
+    // TMDB treats commas as AND and pipes as OR; the UI only produces AND.
+    ...(f.genre.length ? { with_genres: f.genre.join(",") } : {}),
     ...(f.language ? { with_original_language: f.language } : {}),
     ...(f.minRating ? { "vote_average.gte": String(f.minRating) } : {}),
     ...(f.yearFrom ? { [`${date}.gte`]: `${f.yearFrom}-01-01` } : {}),

@@ -135,6 +135,11 @@ export default function Search({
     }
   }, [q]);
 
+  const openFiltersFromPull = useCallback(async () => {
+    if (browsing) setDiscoverFilterOpen(true);
+    else setFilterOpen(true);
+  }, [browsing]);
+
   const tracked = new Map(items.map((i) => [i.id, i]));
   // Pulling loads raw pages; if filters hide everything the user can still pull
   // for more, so canPull deliberately uses the unfiltered count.
@@ -143,6 +148,17 @@ export default function Search({
 
   return (
     <div>
+      {/* Pull down from the top: the whole Search screen lifts, chevron opens filters. */}
+      <PullUpToLoad
+        canLoad={!filterOpen && !discoverFilterOpen}
+        onLoad={openFiltersFromPull}
+        resetKey={`${browsing ? "browse" : "results"}:${filterOpen || discoverFilterOpen ? "open" : "closed"}`}
+        direction="down"
+        actionLabel="open filters"
+        busyLabel="Opening filters"
+        indicator="chevron"
+        allowTyping
+      >
       <ScreenHeader
         title="Search"
         right={
@@ -239,6 +255,7 @@ export default function Search({
           ) : null}
         </PullUpToLoad>
       )}
+      </PullUpToLoad>
 
       <SearchFilterSheet
         open={filterOpen && !browsing}

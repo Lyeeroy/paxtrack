@@ -21,17 +21,19 @@ const SHELVES: Record<Exclude<Category, "discover">, Shelf> = {
 
 function discoverShelf(url: URL): Shelf {
   const raw = (key: string) => url.searchParams.get(key) ?? "";
+  // An unset client type is the default TV feed; only Movie switches endpoint.
+  const type: MediaType = raw("type") === "movie" ? "movie" : "tv";
   // Rebuild from whitelisted values: no raw client param ever reaches TMDB.
   const f = normalizeFilters({
     ...DEFAULT_DISCOVER_FILTERS,
-    type: raw("type") === "movie" ? "movie" : "tv",
-    genre: raw("genre"),
+    type,
+    genre: raw("genre").split(",").filter(Boolean),
     language: raw("language"),
     minRating: Number(raw("minRating") || 0),
     yearFrom: raw("yearFrom"),
     yearTo: raw("yearTo"),
   });
-  return { path: `/discover/${f.type}`, params: tmdbDiscoverParams(f), type: f.type };
+  return { path: `/discover/${type}`, params: tmdbDiscoverParams(f), type };
 }
 
 export async function GET(req: Request) {

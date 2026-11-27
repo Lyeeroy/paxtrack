@@ -110,6 +110,7 @@ button {
   z-index: 42;
 }
 
+
 /* The dots are sticky inside the transformed subtree; fade them while pulling. */
 .browse-dots {
   transition: opacity 140ms ease-out;

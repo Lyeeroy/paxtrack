@@ -83,6 +83,7 @@ export default function PullUpToLoad({
   actionLabel = "load more",
   busyLabel = "Loading more",
   indicator = "ring",
+  allowTyping = false,
   children,
 }: {
   canLoad: boolean;
@@ -90,6 +91,8 @@ export default function PullUpToLoad({
   /** Changing this (tab/column/query) cancels any in-progress pull. */
   resetKey?: string | number;
   className?: string;
+  /** Let the gesture start while a text field inside the wrapper has focus. */
+  allowTyping?: boolean;
   /** `up` pulls from the document bottom; `down` pulls from a scroll container's top. */
   direction?: "up" | "down";
   /** Scroll container for `down`; defaults to the document. */
@@ -115,6 +118,7 @@ export default function PullUpToLoad({
   const onLoadRef = useRef(onLoad);
   const directionRef = useRef(direction);
   const scrollRefRef = useRef(scrollRef);
+  const allowTypingRef = useRef(allowTyping);
   const labelsRef = useRef({ actionLabel, busyLabel });
   const [mounted, setMounted] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -134,6 +138,7 @@ export default function PullUpToLoad({
     onLoadRef.current = onLoad;
     directionRef.current = direction;
     scrollRefRef.current = scrollRef;
+    allowTypingRef.current = allowTyping;
     labelsRef.current = { actionLabel, busyLabel };
   });
 
@@ -220,7 +225,7 @@ export default function PullUpToLoad({
     const onStart = (e: TouchEvent) => {
       if (e.touches.length !== 1 || busyRef.current || !canLoadRef.current)
         return;
-      if (isTyping() || !atEdge()) return;
+      if ((!allowTypingRef.current && isTyping()) || !atEdge()) return;
       const t = e.touches[0];
       drag.current = {
         x: t.clientX,
