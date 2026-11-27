@@ -10,7 +10,16 @@ import {
   RATINGS,
   type DiscoverFilters,
 } from "@/lib/discover";
-import { IconBack, Sheet } from "./ui";
+import { IconBack, IconClose } from "./ui";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "./ui/drawer";
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -95,24 +104,32 @@ export function DiscoverFilterSheet({
   const set = (patch: Partial<DiscoverFilters>) => onChange(normalizeFilters({ ...filters, ...patch }));
 
   return (
-    <Sheet
+    <Drawer
       open={open}
-      onClose={onClose}
-      title="Discover filters"
-      subtitle="Results update as you choose"
-      footer={
-        filtersActive(filters) ? (
-          <button
-            type="button"
-            onClick={() => onChange(DEFAULT_DISCOVER_FILTERS)}
-            className="h-11 w-full rounded-xl text-[14px] text-dim active:bg-raised hover:text-fg"
-          >
-            Reset filters
-          </button>
-        ) : undefined
-      }
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      showSwipeHandle
     >
-      <div className="px-4 pb-4 pt-1">
+      <DrawerContent className="mx-auto max-w-xl rounded-t-2xl border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]">
+        <DrawerHeader className="relative pb-0 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
+          <div className="min-w-0 flex-1">
+            <DrawerTitle className="truncate text-[16px] font-semibold leading-tight text-fg">
+              Discover filters
+            </DrawerTitle>
+            <DrawerDescription className="mt-0.5 truncate text-xs text-dim">
+              Results update as you choose
+            </DrawerDescription>
+          </div>
+          <DrawerClose
+            aria-label="Close"
+            className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
+          >
+            <IconClose className="size-5" />
+          </DrawerClose>
+        </DrawerHeader>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
+          <div className="px-4 pb-4 pt-1">
         <Section title="Type">
           <div className="flex flex-wrap gap-1.5">
             {(["tv", "movie"] as const).map((t) => (
@@ -165,7 +182,20 @@ export function DiscoverFilterSheet({
             onChange={(years) => set({ yearFrom: years.from, yearTo: years.to })}
           />
         </Section>
-      </div>
-    </Sheet>
+          </div>
+        </div>
+        {filtersActive(filters) ? (
+          <DrawerFooter className="border-t border-line/70 p-4">
+            <button
+              type="button"
+              onClick={() => onChange(DEFAULT_DISCOVER_FILTERS)}
+              className="h-11 w-full rounded-xl text-[14px] text-dim active:bg-raised hover:text-fg"
+            >
+              Reset filters
+            </button>
+          </DrawerFooter>
+        ) : null}
+      </DrawerContent>
+    </Drawer>
   );
 }

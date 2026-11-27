@@ -5,22 +5,22 @@
 
 ## Context
 
-`Sheet` in `src/components/ui.tsx` had grown into ~590 lines of hand-written gesture plumbing: pointer capture, a scroll-lock handshake, velocity sampling, WAAPI exits, detent resizing, scrim fading, focus trapping and portal/ARIA management. Those details were carefully documented in ADRs 0006 and 0007, but they duplicated what a maintained primitive already does well. shadcn/ui's `Drawer` (Base UI) now provides swipe-to-dismiss, snap points, a swipe handle, focus management, scroll locking and reduced-motion-aware transitions out of the box, with better platform-native feel than the bespoke implementation.
+`Sheet` in `src/components/ui.tsx` had grown into ~590 lines of hand-written gesture plumbing: pointer capture, a scroll-lock handshake, velocity sampling, WAAPI exits, detent resizing, scrim fading, focus trapping and portal/ARIA management. Those details were carefully documented in ADRs 0006 and 0007, but they duplicated what a maintained primitive already does well. shadcn/ui's `Drawer` (Base UI) provides swipe-to-dismiss, snap points, a swipe handle, focus management, scroll locking and reduced-motion-aware transitions out of the box, with better platform-native feel than the bespoke implementation.
 
 This project already initialized shadcn/ui against the official `@shadcn` registry with the `base` primitive library, so no new dependency was needed.
 
 ## Decision
 
 - Install `npx shadcn@latest add drawer`; the source lives in `src/components/ui/drawer.tsx` and is owned by this repo.
-- `Sheet` in `src/components/ui.tsx` is now a thin, app-specific **adapter over `Drawer`**, not a separate gesture implementation. It keeps the old `open` / `onClose` / `title` / `subtitle` / `children` / `footer` / `maxHeight` API so the three call sites (detail info, Search filters, Discover filters) do not change, and adds an optional `snapPoints` prop.
-- The detail info sheet passes `snapPoints={[0.78, 1]}` to keep the collapsed/expanded detents. The two filter sheets stay content-sized; forcing them to 78dvh would leave a large empty panel.
+- **Delete `Sheet` from `src/components/ui.tsx` entirely.** The three overlays — detail info, Search filters, Discover filters — compose `Drawer`, `DrawerContent`, `DrawerHeader`, `DrawerTitle`, `DrawerDescription`, `DrawerClose` and `DrawerFooter` directly. There is no app-level modal wrapper left.
+- The detail info drawer passes `snapPoints={[0.78, 1]}` to keep the collapsed/expanded detents. The two filter drawers stay content-sized; forcing them to 78dvh would leave a large empty panel.
 - Base UI now owns dismissal thresholds, flick detection, scroll-vs-swipe decisions and focus/scroll locking. The custom 25%-of-panel threshold, 0.35 px/ms velocity check and 120 ms scroll-lock constant are gone.
-- The generated drawer is restyled to this app: `bg-surface`, `border-line`, `z-[45]`, `bg-black/70` scrim, `rounded-t-2xl`, 260 ms in / 200 ms out with `var(--ease-sheet)`, and `body { position: relative }` for iOS 26 Safari.
-- Dismissal still calls `onClose` from `Drawer`'s `onOpenChange(false)`, so the parent-owned history entry is popped on the same tick and system back still works.
+- Each call site restyles the generated components with the app's tokens: `mx-auto max-w-xl rounded-t-2xl border-line bg-surface`, `z-[45]`, `bg-black/70` scrim, a 44×44 close button, and a `min-h-0 flex-1 overflow-y-auto` content region. `src/components/ui/drawer.tsx` carries the shared 260 ms in / 200 ms out timing and `var(--ease-sheet)`, and `globals.css` gives `body` `position: relative` for iOS 26 Safari.
+- Dismissal calls `onClose` from `Drawer`'s `onOpenChange(false)`, so the parent-owned history entry is popped on the same tick and system back still works.
 
 ## Consequences
 
-- Roughly 590 lines of gesture code are replaced by a ~70-line adapter; future fixes to Base UI's touch handling arrive with a dependency update instead of local patching.
+- Roughly 590 lines of gesture code are gone, along with the `Sheet` abstraction; each overlay is now ordinary shadcn composition. Future touch-handling fixes arrive with a dependency update instead of local patching.
 - Swipe/detent thresholds now follow Base UI, not the documented 25%/0.35 px/ms numbers. ADR 0007's mechanism rules are superseded; its guarantees (immediate dismissal, every close path, modal semantics, one history entry) remain.
-- The generated `drawer.tsx` is local source: re-running `shadcn add drawer` without `--diff` will overwrite the styling overrides.
-- `Drawer` handles background `aria-hidden`/`inert` and focus itself, so `ui.tsx` no longer sets those manually.
+- The generated `drawer.tsx` is local source: re-running `shadcn add drawer` without `--diff` will overwrite the timing/styling overrides.
+- `Drawer` handles background `aria-hidden`/`inert` and focus itself, so no app code sets those manually any more.

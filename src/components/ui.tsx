@@ -1,15 +1,7 @@
 "use client";
 
-import { useRef, type CSSProperties, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { haptic } from "@/lib/toast";
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle,
-} from "./ui/drawer";
 
 type IconProps = { className?: string };
 const base = {
@@ -270,82 +262,5 @@ export function SwipeRow({
         {children}
       </div>
     </div>
-  );
-}
-
-
-/**
- * App-specific wrapper over shadcn/ui's Drawer (Base UI).
- *
- * Drawer owns the swipe gesture, snap points, focus trap, backdrop and scroll
- * lock. This wrapper only supplies the AMOLED surface styling and the shared
- * title / close / footer layout, so the filter sheets and the detail info
- * sheet keep one small API.
- */
-export type SheetProps = {
-  open: boolean;
-  /** Drawer requests dismissal: swipe, backdrop, Escape, system back or the close button. */
-  onClose: () => void;
-  title: ReactNode;
-  subtitle?: ReactNode;
-  children: ReactNode;
-  footer?: ReactNode;
-  /** Height cap when the drawer has no snap points. */
-  maxHeight?: string;
-  /** Enable the collapsed/expanded detents (used by the detail info sheet). */
-  snapPoints?: (number | string)[];
-};
-
-export function Sheet({
-  open,
-  onClose,
-  title,
-  subtitle,
-  children,
-  footer,
-  maxHeight = "78dvh",
-  snapPoints,
-}: SheetProps) {
-  const hasSnaps = !!snapPoints?.length;
-
-  return (
-    <Drawer
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      snapPoints={snapPoints}
-      showSwipeHandle
-    >
-      <DrawerContent
-        className="mx-auto max-w-xl rounded-t-2xl border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]"
-        style={{ "--drawer-content-max-height": hasSnaps ? "100dvh" : maxHeight } as CSSProperties}
-      >
-        <DrawerHeader className="relative pb-0 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
-          <div className="min-w-0 flex-1">
-            <DrawerTitle className="truncate text-[16px] font-semibold leading-tight text-fg">
-              {title}
-            </DrawerTitle>
-            {subtitle ? (
-              <DrawerDescription className="mt-0.5 truncate text-xs text-dim">
-                {subtitle}
-              </DrawerDescription>
-            ) : null}
-          </div>
-          <DrawerClose
-            aria-label="Close"
-            className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
-          >
-            <IconClose className="size-5" />
-          </DrawerClose>
-        </DrawerHeader>
-        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
-          {children}
-        </div>
-        {footer ? (
-          <div className="shrink-0 touch-none border-t border-line/70 px-4 py-3">{footer}</div>
-        ) : null}
-      </DrawerContent>
-    </Drawer>
   );
 }

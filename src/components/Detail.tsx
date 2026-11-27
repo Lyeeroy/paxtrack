@@ -8,7 +8,15 @@ import { markUpTo, removeItem, setSeason, setStatus, toggleEpisode, unmarkFrom }
 import { haptic, showToast } from "@/lib/toast";
 import type { EpData, Item, Status } from "@/lib/types";
 import PullUpToLoad from "./PullUpToLoad";
-import { IconBack, IconCheck, Poster, Progress, Sheet, SwipeRow, TypeTag } from "./ui";
+import { IconBack, IconCheck, IconClose, Poster, Progress, SwipeRow, TypeTag } from "./ui";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "./ui/drawer";
 
 const STATUSES: { id: Status; label: string }[] = [
   { id: "watching", label: "Watching" },
@@ -330,14 +338,33 @@ export default function Detail({
         </div>
       </PullUpToLoad>
 
-      <Sheet
+      <Drawer
         open={infoOpen}
-        onClose={onCloseInfo}
-        title={item.title}
-        subtitle="Details"
+        onOpenChange={(next) => {
+          if (!next) onCloseInfo();
+        }}
         snapPoints={[0.78, 1]}
+        showSwipeHandle
       >
-        <div className="px-4 pb-4 pt-1">
+        <DrawerContent className="mx-auto max-w-xl rounded-t-2xl border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]">
+          <DrawerHeader className="relative pb-0 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
+            <div className="min-w-0 flex-1">
+              <DrawerTitle className="truncate text-[16px] font-semibold leading-tight text-fg">
+                {item.title}
+              </DrawerTitle>
+              <DrawerDescription className="mt-0.5 truncate text-xs text-dim">
+                Details
+              </DrawerDescription>
+            </div>
+            <DrawerClose
+              aria-label="Close"
+              className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
+            >
+              <IconClose className="size-5" />
+            </DrawerClose>
+          </DrawerHeader>
+          <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
+            <div className="px-4 pb-4 pt-1">
           {info?.overview ? (
             <p className="text-[14px] leading-relaxed text-dim">{info.overview}</p>
           ) : !infoResolved ? (
@@ -367,8 +394,10 @@ export default function Detail({
             />
             <InfoRow label="Added" value={new Date(item.addedAt).toISOString().slice(0, 10)} />
           </dl>
-        </div>
-      </Sheet>
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

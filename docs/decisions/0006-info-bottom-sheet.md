@@ -39,3 +39,7 @@ The first implementation had no visible close button, grabbed the drag anywhere 
 - Focus is trapped and restored; the detail behind is `aria-hidden`, the main tab content is `inert`, and body scroll is locked.
 
 The rest of this ADR still stands: the sheet is a narrow, single-purpose exception, and future overlays should reuse it.
+
+## Amendment — 2026-11-27
+
+The `Sheet` primitive referred to above has been deleted. The info panel and the two filter panels now compose shadcn's `Drawer` directly; see [ADR 0013](./0013-drawer-replaces-sheet.md). The "reuse one overlay pattern" guidance still applies, but the pattern is now `Drawer`, not `Sheet`.

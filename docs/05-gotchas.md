@@ -45,7 +45,7 @@ The root `AGENTS.md` block is generated and re-added by `next dev`. It points to
 
 ## Overlays and the drawer
 
-- **The drawer closes in one place.** `Sheet` calls `onClose` from the Drawer's `onOpenChange(false)` on the same tick. Do not add a `closing` flag, a `setTimeout`, or an "animation already played" ref in the parent; that is what made the old sheet drift from history and double-back.
+- **The drawer closes in one place.** Each call site handles `Drawer`'s `onOpenChange(false)` by calling its own close callback on the same tick. Do not add a `closing` flag, a `setTimeout`, or an "animation already played" ref in the parent; that is what made the old sheet drift from history and double-back.
 - **A history entry must be popped, not just hidden.** `openInfo` pushes `{ info: true }`; `closeInfo` calls `history.back()` when that state is active, otherwise `setInfoOpen(false)`. Closing via the drawer's X, backdrop, swipe or Escape goes through the same `onClose`, so system back and in-drawer close cannot disagree.
 - **Do not hand-roll swipe handling.** Base UI owns the scroll-vs-swipe decision, velocity threshold and dismissal distance; the old 120 ms scroll-lock and 0.35 px/ms constants were removed. Keep gesture opt-outs on the components that already drag (swipe rows, carousels) rather than adding global listeners.
 - **Detents come from `snapPoints`.** The detail passes `[0.78, 1]`; up from the header expands, down from expanded collapses, down from collapsed dismisses. The filter sheets deliberately have no snap points — forcing 78dvh would leave a mostly empty panel.

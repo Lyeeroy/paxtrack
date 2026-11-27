@@ -1,7 +1,16 @@
 "use client";
 
 import type { Item, SearchResult, Status } from "@/lib/types";
-import { Sheet } from "./ui";
+import { IconClose } from "./ui";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "./ui/drawer";
 
 /** `in`/`out` are library presence; the Status values filter by tracked status. */
 export type LibraryFilter = "all" | "in" | "out" | Status;
@@ -59,7 +68,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   );
 }
 
-/** Filter sheet for Search results. Every chip applies immediately; there is no Apply button. */
+/** Filter drawer for Search results. Every chip applies immediately; there is no Apply button. */
 export function SearchFilterSheet({
   open,
   onClose,
@@ -74,47 +83,70 @@ export function SearchFilterSheet({
   subtitle?: string;
 }) {
   return (
-    <Sheet
+    <Drawer
       open={open}
-      onClose={onClose}
-      title="Filters"
-      subtitle={subtitle}
-      footer={
-        filtersActive(filters) ? (
-          <button
-            type="button"
-            onClick={() => onChange(DEFAULT_FILTERS)}
-            className="h-11 w-full rounded-xl text-[14px] text-dim active:bg-raised hover:text-fg"
-          >
-            Clear filters
-          </button>
-        ) : undefined
-      }
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      showSwipeHandle
     >
-      <div className="px-4 pb-4 pt-1">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Type</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {TYPES.map((t) => (
-            <Chip
-              key={t.id}
-              label={t.label}
-              active={filters.type === t.id}
-              onClick={() => onChange({ ...filters, type: t.id })}
-            />
-          ))}
+      <DrawerContent className="mx-auto max-w-xl rounded-t-2xl border-line bg-surface pb-[calc(env(safe-area-inset-bottom)+12px)]">
+        <DrawerHeader className="relative pb-0 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
+          <div className="min-w-0 flex-1">
+            <DrawerTitle className="truncate text-[16px] font-semibold leading-tight text-fg">
+              Filters
+            </DrawerTitle>
+            {subtitle ? (
+              <DrawerDescription className="mt-0.5 truncate text-xs text-dim">
+                {subtitle}
+              </DrawerDescription>
+            ) : null}
+          </div>
+          <DrawerClose
+            aria-label="Close"
+            className="absolute right-2 top-2 flex size-11 items-center justify-center rounded-full text-dim active:bg-raised hover:text-fg"
+          >
+            <IconClose className="size-5" />
+          </DrawerClose>
+        </DrawerHeader>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
+          <div className="px-4 pb-4 pt-1">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-faint">Type</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {TYPES.map((t) => (
+                <Chip
+                  key={t.id}
+                  label={t.label}
+                  active={filters.type === t.id}
+                  onClick={() => onChange({ ...filters, type: t.id })}
+                />
+              ))}
+            </div>
+            <p className="mt-5 text-[11px] font-medium uppercase tracking-wider text-faint">Library</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {LIBRARIES.map((l) => (
+                <Chip
+                  key={l.id}
+                  label={l.label}
+                  active={filters.library === l.id}
+                  onClick={() => onChange({ ...filters, library: l.id })}
+                />
+              ))}
+            </div>
+          </div>
         </div>
-        <p className="mt-5 text-[11px] font-medium uppercase tracking-wider text-faint">Library</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {LIBRARIES.map((l) => (
-            <Chip
-              key={l.id}
-              label={l.label}
-              active={filters.library === l.id}
-              onClick={() => onChange({ ...filters, library: l.id })}
-            />
-          ))}
-        </div>
-      </div>
-    </Sheet>
+        {filtersActive(filters) ? (
+          <DrawerFooter className="border-t border-line/70 p-4">
+            <button
+              type="button"
+              onClick={() => onChange(DEFAULT_FILTERS)}
+              className="h-11 w-full rounded-xl text-[14px] text-dim active:bg-raised hover:text-fg"
+            >
+              Clear filters
+            </button>
+          </DrawerFooter>
+        ) : null}
+      </DrawerContent>
+    </Drawer>
   );
 }
