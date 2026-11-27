@@ -1,7 +1,7 @@
 # 0007 — Sheet interaction contract
 
 - Date: 2026-11-24
-- Status: accepted
+- Status: superseded in part — the guarantees below still hold, but the hand-written gesture/motion mechanism was replaced by shadcn Drawer on 2026-11-27 ([ADR 0013](./0013-drawer-replaces-sheet.md)).
 
 ## Context
 

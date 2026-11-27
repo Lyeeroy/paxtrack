@@ -12,7 +12,7 @@ The detail view already exposes its info sheet through the poster/title buttons.
 - Reuse `PullUpToLoad` with `direction="down"`. It claims only a mostly vertical, single-finger drag after 8 px of slop while the detail scroll container is at `scrollTop ≈ 0`, then lifts the content at 0.55× finger travel and fills the same 44 px accent ring from 164 px to 284 px (pagination keeps 48–160 px). Release past the threshold calls `onOpenInfo()`; below it the content springs back over 180 ms.
 - The detail passes its scroll container by ref, because the gesture target is the inner content wrapper and the document scroll position never changes here.
 - The indicator uses a top variant (`.pull-indicator-top`, `z-42`): below the sticky header, above the detail view (`z-40`) and below the sheet (`z-45`). It stays at a fixed spot high below the header, fades in from 140 px and is opaque by 164 px — exactly when the ring fill begins — so the user sees the fill start instead of a mostly filled ring. Aria labels say “Pull to open details” / “Release to open details”.
-- While `infoOpen` is true the pull is disabled and reset, so it cannot double-open or leave a spinner behind the sheet. The sheet keeps its own drag-to-dismiss/detent contract from ADR 0007; the poster/title buttons remain the non-gesture path.
+- While `infoOpen` is true the pull is disabled and reset, so it cannot double-open or leave a spinner behind the sheet. The sheet keeps its own drag-to-dismiss/detent contract, now provided by shadcn Drawer ([ADR 0013](./0013-drawer-replaces-sheet.md)); the poster/title buttons remain the non-gesture path.
 
 ## Consequences
 

@@ -30,9 +30,10 @@ Write about *why*, not *what* — the code already says what. Update the status 
 - [0004 — Previews and soft-delete tombstones](./0004-previews-and-tombstones.md) — why deleted items stay in the map and search results are not persisted on open.
 - [0005 — Phone-first, gesture-driven, instant navigation](./0005-phone-first-gesture-navigation.md) — why interaction cost outranks extra features and desktop conventions.
 - [0006 — Info bottom sheet on the detail view](./0006-info-bottom-sheet.md) — why this one modal pattern is allowed, and the constraints it keeps.
-- [0007 — Sheet interaction contract](./0007-sheet-interaction-contract.md) — the reusable sheet's dismissal, detents, drag, focus and motion rules.
+- [0007 — Sheet interaction contract](./0007-sheet-interaction-contract.md) — the original hand-written sheet's dismissal, detents, drag, focus and motion rules; implementation details superseded by [0013](./0013-drawer-replaces-sheet.md).
 - [0008 — Browse uses native scroll-snap, not a JS pager](./0008-native-scroll-snap-pager.md) — why momentum is the browser's job and `<main>` must allow `pan-x`; do not reintroduce a JS fling.
 - [0009 — Deliberate bottom-pull pagination](./0009-deliberate-bottom-pull-pagination.md) — why auto-load was removed, how the pull takes over, and the 5-page Browse cap with skeleton catch-up.
 - [0010 — Balanced Browse pagination](./0010-balanced-browse-pagination.md) — why pages load in lockstep across all five columns and why cross-page TMDB duplicates are kept.
 - [0011 — Pull down opens the detail info sheet](./0011-pull-down-opens-detail-sheet.md) — reusing the pull gesture inverted, with the indicator layered between detail and sheet.
 - [0012 — Filtered Discover keeps its own cache lane](./0012-filtered-discover.md) — server-side filters, a per-filter page cache, and why Discover can end shorter than the other columns.
+- [0013 — shadcn Drawer replaces the in-house Sheet](./0013-drawer-replaces-sheet.md) — why the modal now delegates gestures, snap points and focus to Base UI.

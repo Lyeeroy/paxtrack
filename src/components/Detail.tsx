@@ -330,7 +330,13 @@ export default function Detail({
         </div>
       </PullUpToLoad>
 
-      <Sheet open={infoOpen} onClose={onCloseInfo} title={item.title} subtitle="Details">
+      <Sheet
+        open={infoOpen}
+        onClose={onCloseInfo}
+        title={item.title}
+        subtitle="Details"
+        snapPoints={[0.78, 1]}
+      >
         <div className="px-4 pb-4 pt-1">
           {info?.overview ? (
             <p className="text-[14px] leading-relaxed text-dim">{info.overview}</p>

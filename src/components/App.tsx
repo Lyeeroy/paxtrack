@@ -138,8 +138,8 @@ export default function App() {
     setPreviewItem(preview ?? null);
     setInfoOpen(false);
   }, []);
-  // The info sheet is a history entry too: the first system back closes the
-  // sheet, the second closes the detail view. The Sheet starts its own exit on
+  // The info drawer is a history entry too: the first system back closes the
+  // drawer, the second closes the detail view. The Drawer requests dismissal on
   // the same tick; no parent timer to drift out of sync with the animation.
   const openInfo = useCallback(() => {
     if (!detailId || infoOpen) return;

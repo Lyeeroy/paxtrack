@@ -50,13 +50,13 @@ For the visual language **and UX rules** — phone-first, gestures and instant n
 
 - Tailwind 4 theme tokens are declared in `src/app/globals.css` under `@theme` (`bg`, `surface`, `raised`, `line`, `fg`, `dim`, `faint`, `accent`, `warn`, `danger`). Use `bg-surface`, `text-dim`, etc. — no arbitrary hex colours in components.
 - The palette is a deliberately restrained AMOLED dark theme (pure `#000` background, one green accent). Don't lighten it casually.
-- Build new controls from `ui.tsx` primitives: `ScreenHeader`, `Poster`, `Progress`, `TypeTag`, `Empty`, `SwipeRow`, `Sheet` and the inline SVG `Icon*` components. Add an icon there rather than introducing an icon package.
+- Build new controls from `ui.tsx` primitives: `ScreenHeader`, `Poster`, `Progress`, `TypeTag`, `Empty`, `SwipeRow`, `Sheet` (a thin adapter over shadcn `Drawer`) and the inline SVG `Icon*` components. Add an icon there rather than introducing an icon package.
 - Posters use a plain `<img>` with an intentional `// eslint-disable-next-line @next/next/no-img-element` — Next's image optimizer is avoided for the external TMDB host. Keep the suppression comment and its reason.
 - Safe-area insets (`env(safe-area-inset-*)`) are used in the tab bar, headers and toasts. Preserve them on new fixed-position UI.
 - Accessibility is expected: `aria-label`/`aria-pressed`/`aria-current`/`role` on controls, `aria-live` on async status, `role="progressbar"` with values, visible `:focus-visible` outline, and `prefers-reduced-motion` handling in CSS. Follow the existing components.
 - `SwipeRow` writes transforms directly to the DOM during a drag (no React re-renders) for 60 fps on cheap phones. Keep gesture work outside React state. Elements inside a swipe row must keep the `data-swipe` marker so the page-level tab swipe ignores them.
 - The detail view and the info sheet are navigated with `window.history.pushState` / `popstate`, not the Next router, so the system back button and edge swipe close them. Don't replace this with router pushes.
-- `Sheet` owns its enter/exit animation, drag-to-dismiss, scrim, focus trap and scroll lock. A parent passes `open`/`onClose` and owns the matching history entry; never add a close timer or a "closing" flag in the parent (see [ADR 0007](./decisions/0007-sheet-interaction-contract.md)).
+- The `Sheet` adapter delegates enter/exit animation, drag-to-dismiss, snap points, scrim, focus trap and scroll lock to shadcn `Drawer` (Base UI). A parent passes `open`/`onClose` and owns the matching history entry; never add a close timer or a "closing" flag in the parent (see [ADR 0013](./decisions/0013-drawer-replaces-sheet.md)).
 - Mobile focus (e.g. re-tapping the Search tab) must be triggered inside the click handler to count as a user gesture.
 
 ## Error handling and feedback

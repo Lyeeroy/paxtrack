@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 /* AMOLED palette: true black base, near-black surfaces, one restrained accent.
    Pure #000 pixels are switched off on OLED panels = real battery savings. */
@@ -33,6 +37,9 @@ body {
 }
 
 body {
+  /* Base UI's Drawer overlay is absolute on iOS 26 Safari; a positioned body
+     keeps it covering the viewport after the page has scrolled. */
+  position: relative;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -137,31 +144,6 @@ button {
 .anim-up {
   animation: fade-up 160ms ease-out;
 }
-@keyframes sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: none;
-  }
-}
-/* A sheet is physical: it gets a little longer than an in-page transition.
-   Keep 260ms in sync with SHEET_OPEN_MS in src/components/ui.tsx. */
-.anim-sheet {
-  animation: sheet-up 260ms var(--ease-sheet);
-}
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-.anim-fade {
-  animation: fade-in 260ms var(--ease-sheet) both;
-}
-
 /* Launch splash: the one deliberate inversion of the black-first palette —
    a plain green field with the icon's cube drawing itself. */
 .splash {
@@ -199,5 +181,100 @@ button {
   }
   .splash-edge {
     animation: none !important;
+  }
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* shadcn/ui semantic tokens mapped onto the app's AMOLED palette, so any
+   component generated from the @shadcn registry looks native here. Declared
+   on both :root and .dark: the app is dark-only, but Tailwind's dark:
+   variants must still resolve to these same values. */
+:root,
+.dark {
+  --background: #000000;
+  --foreground: #ededee;
+  --card: #0c0c0d;
+  --card-foreground: #ededee;
+  --popover: #0c0c0d;
+  --popover-foreground: #ededee;
+  --primary: #4ade80;
+  --primary-foreground: #000000;
+  --secondary: #151517;
+  --secondary-foreground: #ededee;
+  --muted: #151517;
+  --muted-foreground: #8a8a90;
+  --accent: #4ade80;
+  --accent-foreground: #000000;
+  --destructive: #f87171;
+  --border: #1c1c1f;
+  --input: #1c1c1f;
+  --ring: #4ade80;
+  --chart-1: #4ade80;
+  --chart-2: #fbbf24;
+  --chart-3: #f87171;
+  --chart-4: #1ed760;
+  --chart-5: #8a8a90;
+  --radius: 0.625rem;
+  --sidebar: #0c0c0d;
+  --sidebar-foreground: #ededee;
+  --sidebar-primary: #4ade80;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #151517;
+  --sidebar-accent-foreground: #ededee;
+  --sidebar-border: #1c1c1f;
+  --sidebar-ring: #4ade80;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
   }
 }

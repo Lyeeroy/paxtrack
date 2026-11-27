@@ -12,6 +12,7 @@ It is a mobile-first single-page PWA: one `max-w-xl` column, a fixed bottom tab 
 | --- | --- |
 | Framework | Next.js 16.4.6, App Router |
 | UI | React 19.2.6, TypeScript 5.9.3 (strict) |
+| UI primitives | In-house `src/components/ui.tsx` first; shadcn/ui (`@shadcn` registry, `base`/Base UI, nova style) for new patterns |
 | Styling | Tailwind CSS 4.1.17 via `@tailwindcss/postcss` |
 | Backend | Supabase Auth + Postgres (`@supabase/ssr` 0.12.7, `@supabase/supabase-js` 2.119.2) |
 | Metadata | TMDB v3 API, called only from server route handlers |

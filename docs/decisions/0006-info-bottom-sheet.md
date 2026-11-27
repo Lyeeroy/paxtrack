@@ -1,7 +1,7 @@
 # 0006 — Info bottom sheet on the detail view
 
 - Date: 2026-11-23
-- Status: accepted; interaction details amended 2026-11-24 by [ADR 0007](./0007-sheet-interaction-contract.md)
+- Status: accepted; interaction details amended 2026-11-24 by [ADR 0007](./0007-sheet-interaction-contract.md); implementation superseded 2026-11-27 by [ADR 0013](./0013-drawer-replaces-sheet.md)
 
 ## Context
 

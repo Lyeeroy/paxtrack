@@ -43,14 +43,14 @@ The root `AGENTS.md` block is generated and re-added by `next dev`. It points to
 - **Periodic Background Sync is Chromium-only.** On iOS, notifications require adding the app to the Home Screen first. The UI disables the switch when the APIs are missing.
 - **TMDB posters are cached by the service worker**, not by the app. The 400-entry trim keeps the cache bounded.
 
-## Overlays and the sheet
+## Overlays and the drawer
 
-- **The sheet closes in one place.** `Sheet` starts its exit and calls `onClose` on the same tick. Do not add a `closing` flag, a `setTimeout`, or an "animation already played" ref in the parent; that is what made the old sheet drift from history and double-back.
-- **A history entry must be popped, not just hidden.** `openInfo` pushes `{ info: true }`; `closeInfo` calls `history.back()` when that state is active, otherwise `setInfoOpen(false)`. Closing via the sheet's X, backdrop or Escape goes through the same `onClose`, so system back and in-sheet close cannot disagree.
-- **Do not make the whole sheet draggable.** Content scrolled down owns the gesture; only the header, or content at `scrollTop === 0` after the 120 ms scroll lock, may start a dismiss. Upward expansion is header-only so it never steals a content scroll.
-- **Detents are one gesture each.** Up from the header expands to the top, down from expanded collapses, down from collapsed dismisses. Do not try to chain collapse-then-dismiss in one drag; the detent is committed to React state only after the resize animation finishes.
-- **Portal the sheet to `document.body`.** The detail view is `aria-hidden` and `overflow-hidden` while the sheet is open; a sheet rendered inside it would be hidden or clipped. The background also needs `inert`/`aria-hidden` so focus and screen readers stay in the sheet.
-- **Keep the motion constants in sync.** `SHEET_*` in `ui.tsx` and `--ease-sheet`/`.anim-sheet` in `globals.css` describe the same 260/200 ms motion. Reduced motion is handled in both places.
+- **The drawer closes in one place.** `Sheet` calls `onClose` from the Drawer's `onOpenChange(false)` on the same tick. Do not add a `closing` flag, a `setTimeout`, or an "animation already played" ref in the parent; that is what made the old sheet drift from history and double-back.
+- **A history entry must be popped, not just hidden.** `openInfo` pushes `{ info: true }`; `closeInfo` calls `history.back()` when that state is active, otherwise `setInfoOpen(false)`. Closing via the drawer's X, backdrop, swipe or Escape goes through the same `onClose`, so system back and in-drawer close cannot disagree.
+- **Do not hand-roll swipe handling.** Base UI owns the scroll-vs-swipe decision, velocity threshold and dismissal distance; the old 120 ms scroll-lock and 0.35 px/ms constants were removed. Keep gesture opt-outs on the components that already drag (swipe rows, carousels) rather than adding global listeners.
+- **Detents come from `snapPoints`.** The detail passes `[0.78, 1]`; up from the header expands, down from expanded collapses, down from collapsed dismisses. The filter sheets deliberately have no snap points — forcing 78dvh would leave a mostly empty panel.
+- **Portal is automatic.** `DrawerContent` portals to `document.body` and Base UI sets `aria-hidden`/`inert` on the background. The detail view is `aria-hidden` and `overflow-hidden` while the drawer is open; never render the overlay inside it.
+- **Keep the motion values in sync.** Drawer's 260/200 ms durations live in `src/components/ui/drawer.tsx`; `--ease-sheet` lives in `globals.css`. The global `prefers-reduced-motion` rule collapses both. Also keep `body { position: relative }` — iOS 26 Safari needs it for the overlay to cover the scrolled viewport.
 
 ## Product logic traps
 
